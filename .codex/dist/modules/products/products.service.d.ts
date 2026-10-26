@@ -1,0 +1,32 @@
+import { User } from '../users/entities/user.entity';
+import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductStatusDto } from './dto/update-product-status.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
+import { ProductsRepository } from './products.repository';
+export declare class ProductsService {
+    private readonly productsRepository;
+    constructor(productsRepository: ProductsRepository);
+    createForBusiness(createProductDto: CreateProductDto, currentUser: User): Promise<import("./entities/product.entity").Product>;
+    findAllForBusiness(currentUser: User): Promise<import("./entities/product.entity").Product[]>;
+    findOneForBusiness(id: number, currentUser: User): Promise<import("./entities/product.entity").Product>;
+    updateForBusiness(id: number, updateProductDto: UpdateProductDto, currentUser: User): Promise<import("./entities/product.entity").Product>;
+    updateStatusForBusiness(id: number, updateStatusDto: UpdateProductStatusDto, currentUser: User): Promise<import("./entities/product.entity").Product>;
+    private resolveStockAccess;
+    private requireBusinessUserBusinessId;
+    private assertCategoryBelongsToBusiness;
+    private assertInitialStockBranchBelongsToBusiness;
+    private normalizeCreateDto;
+    private normalizeUpdateDto;
+    private parsePositiveInteger;
+    private normalizeOptionalPositiveInteger;
+    private normalizeRequiredString;
+    private normalizeOptionalString;
+    private normalizeOptionalNonNegativeNumber;
+    private normalizeOptionalPositiveIntegerAsUndefined;
+    private normalizeOptionalNonNegativeNumberAsUndefined;
+    private normalizeOptionalStatus;
+    private normalizeRequiredStatus;
+    private normalizeOptionalUnit;
+    private normalizeRequiredUnit;
+    private isUniqueViolation;
+}

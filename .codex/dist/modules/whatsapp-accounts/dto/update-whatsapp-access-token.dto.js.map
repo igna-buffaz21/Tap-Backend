@@ -1,0 +1,1 @@
+{"version":3,"file":"update-whatsapp-access-token.dto.js","sourceRoot":"","sources":["../../../../src/modules/whatsapp-accounts/dto/update-whatsapp-access-token.dto.ts"],"names":[],"mappings":";;;;;;;;;;;;AAAA,6CAA8C;AAE9C,MAAa,4BAA4B;IAKvC,YAAY,CAAU;CACvB;AAND,oEAMC;AADC;IAJC,IAAA,qBAAW,EAAC;QACX,OAAO,EAAE,QAAQ;QACjB,WAAW,EAAE,6DAA6D;KAC3E,CAAC;;kEACoB"}

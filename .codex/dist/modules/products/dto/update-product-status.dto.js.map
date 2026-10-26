@@ -1,0 +1,1 @@
+{"version":3,"file":"update-product-status.dto.js","sourceRoot":"","sources":["../../../../src/modules/products/dto/update-product-status.dto.ts"],"names":[],"mappings":";;;;;;;;;;;;AAAA,6CAA8C;AAE9C,MAAa,sBAAsB;IAKjC,MAAM,CAAU;CACjB;AAND,wDAMC;AADC;IAJC,IAAA,qBAAW,EAAC;QACX,IAAI,EAAE,CAAC,QAAQ,EAAE,UAAU,CAAC;QAC5B,OAAO,EAAE,UAAU;KACpB,CAAC;;sDACc"}

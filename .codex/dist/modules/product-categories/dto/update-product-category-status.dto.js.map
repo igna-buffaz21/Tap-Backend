@@ -1,0 +1,1 @@
+{"version":3,"file":"update-product-category-status.dto.js","sourceRoot":"","sources":["../../../../src/modules/product-categories/dto/update-product-category-status.dto.ts"],"names":[],"mappings":";;;;;;;;;;;;AAAA,6CAA8C;AAE9C,MAAa,8BAA8B;IAKzC,MAAM,CAAU;CACjB;AAND,wEAMC;AADC;IAJC,IAAA,qBAAW,EAAC;QACX,IAAI,EAAE,CAAC,QAAQ,EAAE,UAAU,CAAC;QAC5B,OAAO,EAAE,UAAU;KACpB,CAAC;;8DACc"}

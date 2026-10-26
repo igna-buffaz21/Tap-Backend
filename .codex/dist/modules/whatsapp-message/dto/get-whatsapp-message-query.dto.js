@@ -1,0 +1,40 @@
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GetWhatsappMessagesByConversationQueryDto = exports.GetWhatsappMessageByProviderIdQueryDto = void 0;
+const swagger_1 = require("@nestjs/swagger");
+class GetWhatsappMessageByProviderIdQueryDto {
+    businessId;
+}
+exports.GetWhatsappMessageByProviderIdQueryDto = GetWhatsappMessageByProviderIdQueryDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 1 }),
+    __metadata("design:type", Number)
+], GetWhatsappMessageByProviderIdQueryDto.prototype, "businessId", void 0);
+class GetWhatsappMessagesByConversationQueryDto {
+    businessId;
+    limit;
+    offset;
+}
+exports.GetWhatsappMessagesByConversationQueryDto = GetWhatsappMessagesByConversationQueryDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 1 }),
+    __metadata("design:type", Number)
+], GetWhatsappMessagesByConversationQueryDto.prototype, "businessId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: 50 }),
+    __metadata("design:type", Number)
+], GetWhatsappMessagesByConversationQueryDto.prototype, "limit", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: 0 }),
+    __metadata("design:type", Number)
+], GetWhatsappMessagesByConversationQueryDto.prototype, "offset", void 0);
+//# sourceMappingURL=get-whatsapp-message-query.dto.js.map

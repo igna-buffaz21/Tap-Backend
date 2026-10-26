@@ -1,0 +1,52 @@
+import { CreateUserDto } from './dto/create-user.dto';
+import { InviteUserDto } from './dto/invite-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { User } from './entities/user.entity';
+import { UsersRepository } from './users.repository';
+type UserResponse = Omit<User, 'role' | 'authorization'>;
+export declare class UsersService {
+    private readonly usersRepository;
+    constructor(usersRepository: UsersRepository);
+    create(createUserDto: CreateUserDto): Promise<UserResponse>;
+    invite(inviteUserDto: InviteUserDto, currentUser: User): Promise<{
+        user: UserResponse;
+        invitation: {
+            id: string;
+            emailAddress: string;
+            status: string;
+            url: string | undefined;
+        };
+    }>;
+    findAll(currentUser: User, branchIdValue?: unknown): Promise<UserResponse[]>;
+    findOne(id: number, currentUser: User): Promise<UserResponse | null>;
+    findByClerkId(clerkId: string): Promise<User | null>;
+    findAuthenticatedByClerkId(clerkId: string): Promise<User | null>;
+    update(id: number, updateUserDto: UpdateUserDto, currentUser: User): Promise<UserResponse | null>;
+    remove(id: number, currentUser: User): Promise<boolean>;
+    private normalizeCreateDto;
+    private normalizeUpdateDto;
+    private normalizeRequiredString;
+    private normalizeEmail;
+    private normalizePositiveIntegerList;
+    private normalizeRequiredPositiveInteger;
+    private getClerkUserProfile;
+    private normalizeOptionalString;
+    private normalizeNullablePositiveInteger;
+    private normalizeOptionalPositiveInteger;
+    private requireBusinessUserBusinessId;
+    private assertBranchBelongsToBusiness;
+    private resolveUserAccess;
+    private resolveAccessScope;
+    private assertBranchScopeAllowsInvite;
+    private getAllowedBranchIdsForUserManageAccess;
+    private assertBranchAllowedForUserManageAccess;
+    private assertBranchesBelongToBusiness;
+    private assertRolesAvailableForBusiness;
+    private mapClerkInvitation;
+    private mapNullableUserResponse;
+    private mapUserResponse;
+    private toClerkInvitationException;
+    private normalizeStatus;
+    private isUniqueViolation;
+}
+export {};

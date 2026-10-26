@@ -1,0 +1,30 @@
+import { DatabaseService } from '../../database/database.service';
+import { PermissionsRepository } from '../permissions/permissions.repository';
+import { RolePermissionsRepository } from '../role-permissions/role-permissions.repository';
+import { User } from '../users/entities/user.entity';
+import { CreateRoleDto } from './dto/create-role.dto';
+import { UpdateRoleDto } from './dto/update-role.dto';
+import { RolesRepository } from './roles.repository';
+export declare class RolesService {
+    private readonly rolesRepository;
+    private readonly rolePermissionsRepository;
+    private readonly permissionsRepository;
+    private readonly databaseService;
+    constructor(rolesRepository: RolesRepository, rolePermissionsRepository: RolePermissionsRepository, permissionsRepository: PermissionsRepository, databaseService: DatabaseService);
+    findAllForBusiness(currentUser: User): Promise<import("./entities/role.entity").Role[]>;
+    findOneForBusiness(id: number, currentUser: User): Promise<import("./entities/role.entity").RoleWithPermissions>;
+    createForBusiness(dto: CreateRoleDto, currentUser: User): Promise<import("./entities/role.entity").RoleWithPermissions>;
+    updateForBusiness(id: number, dto: UpdateRoleDto, currentUser: User): Promise<import("./entities/role.entity").RoleWithPermissions>;
+    deactivateForBusiness(id: number, currentUser: User): Promise<import("./entities/role.entity").Role>;
+    private normalizeCreateDto;
+    private normalizeUpdateDto;
+    private normalizePermissions;
+    private assertPermissionsExist;
+    private resolveBusinessAccess;
+    private requireBusinessUserBusinessId;
+    private normalizeRequiredString;
+    private normalizeOptionalString;
+    private normalizeAccessScope;
+    private parsePositiveInteger;
+    private isUniqueViolation;
+}

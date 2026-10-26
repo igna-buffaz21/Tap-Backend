@@ -1,0 +1,10 @@
+export declare const ACTIVE_BOOKING_STATUSES: readonly ["PENDING", "CONFIRMED"];
+export declare const BOOKING_STATUSES: readonly ["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED", "NO_SHOW"];
+export declare const BOOKING_SOURCES: readonly ["WEB", "WHATSAPP", "ADMIN"];
+export declare const BOOKING_CONFIRMATION_STATUSES: readonly ["not_required", "pending", "reconfirmed"];
+export declare const FREQUENT_CUSTOMER_WINDOW_DAYS = 90;
+export declare const FREQUENT_CUSTOMER_MIN_BOOKINGS = 3;
+export type BookingStatus = (typeof BOOKING_STATUSES)[number];
+export type BookingSource = (typeof BOOKING_SOURCES)[number];
+export type BookingConfirmationStatus = (typeof BOOKING_CONFIRMATION_STATUSES)[number];
+export type CustomerFrequencyType = 'new' | 'casual' | 'frequent';

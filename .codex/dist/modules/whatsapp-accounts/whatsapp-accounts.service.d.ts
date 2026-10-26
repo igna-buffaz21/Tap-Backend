@@ -1,0 +1,30 @@
+import { CreateWhatsappAccountDto } from './dto/create-whatsapp-account.dto';
+import { UpdateWhatsappAccountDto } from './dto/update-whatsapp-account.dto';
+import { WhatsappAccount } from './entities/whatsapp-account.entity';
+import { WhatsappAccessTokenCryptoService } from './whatsapp-access-token-crypto.service';
+import { WhatsappAccountsRepository } from './whatsapp-accounts.repository';
+export declare class WhatsappAccountsService {
+    private readonly whatsappAccountsRepository;
+    private readonly accessTokenCryptoService;
+    constructor(whatsappAccountsRepository: WhatsappAccountsRepository, accessTokenCryptoService: WhatsappAccessTokenCryptoService);
+    create(createWhatsappAccountDto: CreateWhatsappAccountDto): Promise<WhatsappAccount>;
+    findAll(): Promise<WhatsappAccount[]>;
+    findOne(id: number): Promise<WhatsappAccount | null>;
+    findByWebhookReference(displayPhoneNumber: string, phoneNumber: string, wabaId: string): Promise<WhatsappAccount | null>;
+    findByPhoneNumber(phoneNumber: string): Promise<WhatsappAccount | null>;
+    findActiveById(id: number): Promise<WhatsappAccount | null>;
+    findActiveByBusinessId(businessId: number): Promise<WhatsappAccount[]>;
+    update(id: number, updateWhatsappAccountDto: UpdateWhatsappAccountDto): Promise<WhatsappAccount | null>;
+    remove(id: number): Promise<boolean>;
+    updateAccessToken(id: number, accessToken: string): Promise<WhatsappAccount | null>;
+    private parsePositiveInteger;
+    private normalizeRequiredString;
+    private normalizeOptionalString;
+    private normalizeUpdateDto;
+    private decryptAccounts;
+    private decryptNullableAccount;
+    private decryptAccount;
+    private assertBusinessExists;
+    private assertBranchBelongsToBusiness;
+    private isUniqueViolation;
+}
