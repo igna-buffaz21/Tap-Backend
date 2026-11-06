@@ -103,8 +103,16 @@ export class SerialService implements OnModuleDestroy {
     return this.disconnect();
   }
 
-  sendRfid(data: Buffer): Promise<void> {
+  sendRfid(data: Buffer, resetInput = false): Promise<void> {
     return this.enqueue(async () => {
+      if (resetInput) {
+        if (!this.isConnected || this.closing || !this.port)
+          throw new Error('Puerto serial desconectado.');
+        await new Promise<void>((resolve, reject) =>
+          this.port!.flush((error) => (error ? reject(error) : resolve())),
+        );
+        this.buffer = Buffer.alloc(0);
+      }
       for (let offset = 0; offset < data.length; offset += ESP32.maxPayload) {
         await this.writeFrame(
           ESP32.rfidTx,

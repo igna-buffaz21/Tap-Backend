@@ -2,8 +2,8 @@ export const ESP32 = {
   baudRate: 115200,
   start: 0xa5,
   maxPayload: 64,
-  openDoor: 0x01, //comando para abrir puerta
-  closeDoor: 0x02, //comando para cerrar puerta
+  openDoor: 0x02, //comando para abrir puerta
+  closeDoor: 0x01, //comando para cerrar puerta
   rfidTx: 0x10,
   rfidRx: 0x11,
   ack: 0x20, //comando de confirmación del esp32 que se recibió la orden de abrir/cerrar puerta

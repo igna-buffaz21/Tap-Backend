@@ -1,6 +1,5 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { writeFile } from 'node:fs/promises';
 import { createInterface, Interface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { Esp32Module } from '../../modules/esp32/esp32.module';
@@ -18,8 +17,7 @@ export async function runEsp32Console(
   const cancel = () => cancellation.abort();
   terminal.once('close', cancel);
   terminal.once('SIGINT', cancel);
-  let antenna = 1;
-  let diagnostics = false;
+  const antenna = 4;
 
   async function ask(label: string, defaultValue?: string): Promise<string> {
     cancellation.signal.throwIfAborted();
@@ -71,56 +69,20 @@ export async function runEsp32Console(
 
   async function rfidMenu(): Promise<void> {
     try {
+      await reader.stopAllOperations();
+      await reader.selectAntenna(antenna);
       while (!cancellation.signal.aborted) {
-        console.log(`\nRFID · ANT${antenna} · inventario ${reader.isInventoryRunning ? 'activo' : 'detenido'}
- 1 Seleccionar antena       2 Leer una ronda
- 3 Inventario continuo      4 Detener toda actividad RFID
- 5 Consultar potencias      6 Cambiar potencia
- 7 Consultar filtro         8 Fijar filtro EPC
- 9 Quitar filtro           10 Consultar temperatura
-11 Temperatura automática  12 Detener temperatura automática
-13 Umbral de temperatura   14 Historial de temperatura
-15 Registros y estadísticas
-16 Limpiar lecturas        17 Exportar lecturas CSV
-18 Exportar temperaturas CSV
-19 Escribir EPC            20 Activar/desactivar diagnóstico TX/RX
- 0 Volver (detiene RFID)`);
+        console.log(`\nRFID · ANT${antenna} · lectura EPC ${reader.isInventoryRunning ? 'activa' : 'detenida'}
+1 Cambiar potencia | 2 Escribir EPC
+3 ${reader.isInventoryRunning ? 'Detener' : 'Iniciar'} lectura EPC | 4 Temperatura
+0 Volver (detiene RFID)`);
         const command = await ask('Opción');
-        // Estas funciones requieren inventario detenido. También se detiene el
-        // monitoreo automático para ejecutar una prueba aislada y predecible.
-        if (['1', '2', '5', '6', '7', '8', '9', '19'].includes(command)) {
+        if (['1', '2'].includes(command)) {
           await reader.stopAllOperations();
           cancellation.signal.throwIfAborted();
         }
         switch (command) {
           case '1': {
-            const selected = await askNumber('Antena (1–4)', antenna);
-            await reader.selectAntenna(selected);
-            antenna = selected;
-            console.log(`ANT${antenna} confirmada.`);
-            break;
-          }
-          case '2':
-            await reader.selectAntenna(antenna);
-            console.table(await reader.inventory());
-            break;
-          case '3': {
-            const pauseMs = await askNumber(
-              'Pausa entre rondas en ms (0–5000)',
-              150,
-            );
-            reader.startInventory({ antenna, pauseMs });
-            console.log('Inventario solicitado. Usá 4 o 0 para detenerlo.');
-            break;
-          }
-          case '4':
-            await reader.stopAllOperations();
-            console.log('Actividad RFID detenida.');
-            break;
-          case '5':
-            console.log('Potencias ANT1–ANT4 (dBm):', await reader.getPower());
-            break;
-          case '6': {
             const power = await askNumber(
               `Potencia de ANT${antenna} en dBm (5–30)`,
               20,
@@ -131,70 +93,7 @@ export async function runEsp32Console(
             );
             break;
           }
-          case '7':
-            console.log(
-              'Filtro EPC:',
-              (await reader.getFilter()) ?? 'desactivado',
-            );
-            break;
-          case '8':
-            await reader.setFilter(
-              await ask('EPC del filtro (24 caracteres hexadecimales)'),
-            );
-            console.log('Filtro verificado.');
-            break;
-          case '9':
-            await reader.clearFilter();
-            console.log('Filtro eliminado y verificado.');
-            break;
-          case '10':
-            await reader.getTemperature(antenna);
-            break;
-          case '11':
-            reader.startTemperatureMonitoring(
-              await askNumber('Intervalo en segundos (mínimo 1)', 5),
-              antenna,
-            );
-            console.log('Monitoreo automático solicitado.');
-            break;
-          case '12':
-            reader.stopTemperatureMonitoring();
-            console.log('No se programarán nuevas consultas de temperatura.');
-            break;
-          case '13': {
-            const threshold = await ask('Umbral en °C (vacío para desactivar)');
-            reader.setTemperatureThreshold(
-              threshold ? Number(threshold) : null,
-            );
-            console.log('Umbral actualizado.');
-            break;
-          }
-          case '14':
-            console.table(reader.getTemperatureHistory());
-            break;
-          case '15':
-            console.table(reader.getRecords());
-            console.log(reader.getStatistics());
-            break;
-          case '16':
-            reader.clearReadings();
-            console.log('Lecturas limpiadas.');
-            break;
-          case '17':
-          case '18': {
-            const path = await ask(
-              'Ruta del archivo CSV nuevo',
-              command === '17' ? 'rfid.csv' : 'temperatura.csv',
-            );
-            const csv =
-              command === '17'
-                ? reader.exportReadingsCsv()
-                : reader.exportTemperatureCsv();
-            await writeFile(path, csv, { encoding: 'utf8', flag: 'wx' });
-            console.log('CSV guardado en', path);
-            break;
-          }
-          case '19': {
+          case '2': {
             const currentEpc = await ask(
               'EPC actual (24 caracteres hexadecimales)',
             );
@@ -214,12 +113,17 @@ export async function runEsp32Console(
             console.log('EPC final verificado:', reading.epc);
             break;
           }
-          case '20':
-            diagnostics = !diagnostics;
-            console.log(
-              'Diagnóstico:',
-              diagnostics ? 'activado' : 'desactivado',
-            );
+          case '3':
+            if (reader.isInventoryRunning) {
+              await reader.stopAllOperations();
+              console.log('Lectura EPC detenida.');
+            } else {
+              reader.startInventory({ antenna, pauseMs: 150 });
+              console.log('Lectura EPC solicitada. Usá 3 o 0 para detenerla.');
+            }
+            break;
+          case '4':
+            await reader.getTemperature(antenna);
             break;
           case '0':
             return;
@@ -237,23 +141,43 @@ export async function runEsp32Console(
   const onTemperature = (reading: unknown) =>
     console.log('\nTemperatura:', reading);
   const onError = (message: unknown) => console.error('\nRFID:', message);
-  const onAlert = (alert: unknown) =>
-    console.log('\nUmbral de temperatura:', alert);
   const onProgress = (progress: unknown) =>
     console.log('Escritura EPC:', progress);
-  const onDiagnostic = (message: string) => {
-    if (diagnostics) console.log(message);
-  };
   reader.events.on('tag', onTag);
   reader.events.on('temperatureValue', onTemperature);
   reader.events.on('operationError', onError);
   reader.events.on('temperatureError', onError);
-  reader.events.on('temperatureAlert', onAlert);
   reader.events.on('writeProgress', onProgress);
-  reader.events.on('diagnostic', onDiagnostic);
 
   try {
-    console.log('Consola ESP32. Elegí un puerto y conectalo antes de probar.');
+    console.log('Consola ESP32 · RFID fijo en ANT4.');
+    if (!serial.isConnected) {
+      try {
+        const ports = await serial.listPorts();
+        const candidates = ports.filter(
+          (port) =>
+            port.vendorId ||
+            /^(\/dev\/(ttyUSB|ttyACM)|COM\d+$)/i.test(port.path),
+        );
+        if (candidates.length !== 1) {
+          throw new Error(
+            candidates.length === 0
+              ? 'No se encontró un puerto USB serial. Conectá el ESP32 y usá la opción 2.'
+              : 'Hay varios puertos USB seriales. Elegí el del ESP32 con la opción 2.',
+          );
+        }
+        cancellation.signal.throwIfAborted();
+        console.log('Conectando automáticamente a', candidates[0].path);
+        await serial.connect(candidates[0].path);
+        console.log('Conectado.');
+      } catch (error) {
+        if (!cancellation.signal.aborted)
+          console.error(
+            'Conexión automática:',
+            error instanceof Error ? error.message : 'No se pudo conectar.',
+          );
+      }
+    }
     while (!cancellation.signal.aborted) {
       try {
         console.log(`\nESP32 · ${serial.isConnected ? 'conectado' : 'desconectado'}
@@ -281,6 +205,14 @@ export async function runEsp32Console(
             else await rfidMenu();
             break;
           case '0':
+            await reader.stopAllOperations();
+            if (!serial.isConnected)
+              throw new Error(
+                'No se puede salir sin confirmar el cierre. Conectá el puerto USB (opción 2) y volvé a intentar.',
+              );
+            console.log('Cerrando puerta antes de salir…');
+            await door.close();
+            console.log('Puerta cerrada confirmada. Saliendo.');
             return;
           default:
             console.log('Opción inválida.');
@@ -302,9 +234,7 @@ export async function runEsp32Console(
     reader.events.off('temperatureValue', onTemperature);
     reader.events.off('operationError', onError);
     reader.events.off('temperatureError', onError);
-    reader.events.off('temperatureAlert', onAlert);
     reader.events.off('writeProgress', onProgress);
-    reader.events.off('diagnostic', onDiagnostic);
   }
 }
 

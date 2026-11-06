@@ -145,6 +145,7 @@ describe('ESP32 services over the shared USB connection', () => {
         callback();
       }),
       drain: jest.fn((callback: (error?: Error) => void) => callback()),
+      flush: jest.fn((callback: (error?: Error) => void) => callback()),
       write: jest.fn((frame: Buffer, callback: (error?: Error) => void) => {
         writes.push(Buffer.from(frame));
         callback();
@@ -179,13 +180,13 @@ describe('ESP32 services over the shared USB connection', () => {
     return writes.filter((frame) => frame[1] === 0x10).map((frame) => frame[6]);
   }
 
-  it('opens USB once, sends the original door frames and requires ACK', async () => {
+  it('opens USB once, sends the inverted door commands and requires ACK', async () => {
     await serial.connect('/dev/test-esp32');
     await door.open();
-    expect(writes[0].toString('hex')).toBe('a5010001');
+    expect(writes[0].toString('hex')).toBe('a5020002');
     expect(door.state).toBe('open');
     await door.close();
-    expect(writes[1].toString('hex')).toBe('a5020002');
+    expect(writes[1].toString('hex')).toBe('a5010001');
     expect(door.state).toBe('closed');
     expect(SerialPort).toHaveBeenCalledTimes(1);
     expect(jest.mocked(port).set.mock.calls).toEqual([
@@ -226,7 +227,7 @@ describe('ESP32 services over the shared USB connection', () => {
     const pending = door.open();
     const rejection = expect(pending).rejects.toThrow('Sin ACK');
     await jest.advanceTimersByTimeAsync(0);
-    bus.emit('data', a5(0x20, Buffer.from([2])));
+    bus.emit('data', a5(0x20, Buffer.from([1])));
     await jest.advanceTimersByTimeAsync(2500);
     await rejection;
     expect(door.state).toBeNull();
@@ -273,6 +274,20 @@ describe('ESP32 services over the shared USB connection', () => {
     respond = (command) => a0(command, Buffer.from([19]));
     await expect(reader.getPower()).resolves.toEqual([19, 19, 19, 19]);
     expect(() => reader.setPower(1, 34)).toThrow('5 y 30');
+  });
+
+  it('clears an incomplete USB frame before querying and changing ANT4 power', async () => {
+    bus.emit('data', Buffer.from([0xa5, 0x11, 64]));
+    const applying = reader.setPower(4, 16);
+    await jest.advanceTimersByTimeAsync(200);
+    await expect(applying).resolves.toEqual([20, 21, 22, 16]);
+    expect(commands()).toEqual([0x77, 0x76, 0x77]);
+    expect(port.flush).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not flush the USB input when querying temperature', async () => {
+    await reader.getTemperature();
+    expect(port.flush).not.toHaveBeenCalled();
   });
 
   it('verifies the EPC filter on both set and clear', async () => {

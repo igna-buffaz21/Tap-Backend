@@ -749,7 +749,7 @@ export class Cm2000Service implements OnModuleDestroy {
       this.responses.on('frames', onFrames);
       this.responses.on('failure', onFailure);
       void this.serial
-        .sendRfid(tx)
+        .sendRfid(tx, command !== CM2000.temperature)
         .then(() => {
           if (settled) return;
           written = true;
