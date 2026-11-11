@@ -6,7 +6,6 @@ import { AuthService } from './auth.service';
 import { AuthorizationScopeService } from './authorization-scope.service';
 import { ClerkJwtService } from './clerk-jwt.service';
 import { ClerkAuthGuard } from './guards/clerk-auth.guard';
-import { PermissionGuard } from './guards/permission.guard';
 
 @Global()
 @Module({
@@ -18,14 +17,12 @@ import { PermissionGuard } from './guards/permission.guard';
     AuthorizationScopeService,
     ClerkJwtService,
     ClerkAuthGuard,
-    PermissionGuard,
   ],
   exports: [
     AuthService,
     AuthorizationScopeService,
     ClerkJwtService,
     ClerkAuthGuard,
-    PermissionGuard,
   ],
 })
 export class AuthModule {}

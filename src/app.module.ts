@@ -6,7 +6,6 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { ClerkAuthGuard } from './modules/auth/guards/clerk-auth.guard';
-import { PermissionGuard } from './modules/auth/guards/permission.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { BusinessesModule } from './modules/businesses/businesses.module';
@@ -18,6 +17,7 @@ import { ProductsModule } from './modules/products/products.module';
 import { StockMovementsModule } from './modules/stock-movements/stock-movements.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { UsersModule } from './modules/users/users.module';
+import { Esp32Module } from './modules/esp32/esp32.module';
 
 @Module({
   imports: [
@@ -45,16 +45,13 @@ import { UsersModule } from './modules/users/users.module';
     StockMovementsModule,
     SalesModule,
     PaymentsModule,
+    Esp32Module,
   ],
   controllers: [AppController],
   providers: [
     {
       provide: APP_GUARD,
       useClass: ClerkAuthGuard,
-    },
-    {
-      provide: APP_GUARD,
-      useClass: PermissionGuard,
     },
     {
       provide: APP_GUARD,

@@ -8,19 +8,17 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { User } from '../users/entities/user.entity';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { SalesService } from './sales.service';
 
 @ApiTags('sales')
 @ApiBearerAuth()
-@RequirePermission('stock.manage')
 @ApiQuery({
   name: 'businessId',
   required: false,
   description:
-    'Requerido para superadmin. Usuarios de negocio usan el negocio del token.',
+    'Opcional. Debe coincidir con el negocio del usuario autenticado.',
 })
 @Controller('sales')
 export class SalesController {

@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
-import type { RolePermissionAccessScope } from '../auth/interfaces/auth-user.interface';
 import { User } from '../users/entities/user.entity';
 import { BranchImageUploadSignatureDto } from './dto/branch-image-upload-signature.dto';
 import { CreateBranchDto } from './dto/create-branch.dto';
@@ -37,12 +36,6 @@ const OPENING_HOURS_DAYS: BranchOpeningHoursDay[] = [
   'sunday',
 ];
 const TIME_VALUE_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
-const ACCESS_SCOPE_WEIGHT = {
-  own: 1,
-  branch: 2,
-  business: 3,
-} as const;
-type BranchAccessPermission = 'branch.manage' | 'business.settings';
 
 @Injectable()
 export class BranchesService {
@@ -61,24 +54,16 @@ export class BranchesService {
   createForBusiness(createBranchDto: CreateBranchDto, currentUser: User) {
     const authorization = this.requireAuthorization(currentUser);
 
-    if (authorization.isSuperadmin) {
-      return this.create(createBranchDto);
-    }
-
-    const accessScope = authorization.permissions['branch.manage'];
-
-    if (!accessScope) {
-      throw new ForbiddenException('Missing permission branch.manage');
-    }
-
-    if (ACCESS_SCOPE_WEIGHT[accessScope] < ACCESS_SCOPE_WEIGHT.business) {
-      throw new ForbiddenException('Business scope is required');
-    }
-
     const businessId = this.requireBusinessUserBusinessId(
       authorization.businessId,
     );
 
+    if (
+      createBranchDto.business_id !== undefined &&
+      createBranchDto.business_id !== businessId
+    ) {
+      throw new ForbiddenException('Cannot access another business');
+    }
     return this.create({
       ...createBranchDto,
       business_id: businessId,
@@ -92,46 +77,21 @@ export class BranchesService {
   findAllForBusiness(currentUser: User) {
     const authorization = this.requireAuthorization(currentUser);
 
-    if (authorization.isSuperadmin) {
-      return this.findAll();
-    }
-
-    const accessScope =
-      authorization.permissions['branch.manage'] ??
-      authorization.permissions['user.manage'];
-
-    if (!accessScope) {
-      throw new ForbiddenException(
-        'Missing permission branch.manage or user.manage',
-      );
-    }
-
     const businessId = this.requireBusinessUserBusinessId(
       authorization.businessId,
     );
-    const allowedBranchIds =
-      ACCESS_SCOPE_WEIGHT[accessScope] >= ACCESS_SCOPE_WEIGHT.business
-        ? undefined
-        : authorization.branchIds;
-
-    return this.branchesRepository.findAllForBusiness(
-      businessId,
-      allowedBranchIds,
-    );
+    return this.branchesRepository.findAllForBusiness(businessId);
   }
 
   async findOne(id: number, currentUser: User) {
     this.validatePositiveInteger(id, 'id');
 
-    const accessScope = this.resolveBranchReadAccessScope(id, currentUser);
+    const accessScope = this.resolveBranchAccessScope(currentUser);
 
-    return accessScope.businessId === undefined
-      ? this.branchesRepository.findById(id)
-      : this.branchesRepository.findByIdForBusiness(
-          id,
-          accessScope.businessId,
-          accessScope.allowedBranchIds,
-        );
+    return this.branchesRepository.findByIdForBusiness(
+      id,
+      accessScope.businessId,
+    );
   }
 
   async update(
@@ -142,10 +102,7 @@ export class BranchesService {
     this.validatePositiveInteger(id, 'id');
 
     const dto = this.normalizeUpdateDto(updateBranchDto);
-    const updateScope = this.resolveBranchAccessScope(id, currentUser, [
-      'branch.manage',
-      'business.settings',
-    ]);
+    const updateScope = this.resolveBranchAccessScope(currentUser);
 
     return this.updateBranch(id, dto, updateScope.businessId);
   }
@@ -187,109 +144,10 @@ export class BranchesService {
     };
   }
 
-  private resolveBranchAccessScope(
-    id: number,
-    currentUser: User,
-    permissionKeys: BranchAccessPermission[] = ['branch.manage'],
-  ): { businessId?: number } {
+  private resolveBranchAccessScope(currentUser: User): { businessId: number } {
     const authorization = this.requireAuthorization(currentUser);
-
-    if (authorization.isSuperadmin) {
-      return {};
-    }
-
-    const permissionGrant = this.resolveBranchPermissionGrant(
-      authorization.permissions,
-      permissionKeys,
-    );
-
-    if (!permissionGrant) {
-      throw new ForbiddenException(
-        `Missing permission ${permissionKeys.join(' or ')}`,
-      );
-    }
-
-    const businessId = this.requireBusinessUserBusinessId(
-      authorization.businessId,
-    );
-
-    const { permission, accessScope } = permissionGrant;
-
-    if (
-      permission === 'business.settings' &&
-      ACCESS_SCOPE_WEIGHT[accessScope] < ACCESS_SCOPE_WEIGHT.branch
-    ) {
-      throw new ForbiddenException('Branch scope is required');
-    }
-
-    if (ACCESS_SCOPE_WEIGHT[accessScope] >= ACCESS_SCOPE_WEIGHT.business) {
-      return { businessId };
-    }
-
-    if (!authorization.branchIds.includes(id)) {
-      throw new ForbiddenException('Branch is not assigned to user');
-    }
-
-    return { businessId };
-  }
-
-  private resolveBranchPermissionGrant(
-    permissions: Record<string, RolePermissionAccessScope>,
-    permissionKeys: BranchAccessPermission[],
-  ): {
-    permission: BranchAccessPermission;
-    accessScope: RolePermissionAccessScope;
-  } | null {
-    let selectedGrant: {
-      permission: BranchAccessPermission;
-      accessScope: RolePermissionAccessScope;
-    } | null = null;
-
-    for (const permission of permissionKeys) {
-      const accessScope = permissions[permission];
-
-      if (
-        accessScope &&
-        (!selectedGrant ||
-          ACCESS_SCOPE_WEIGHT[accessScope] >
-            ACCESS_SCOPE_WEIGHT[selectedGrant.accessScope])
-      ) {
-        selectedGrant = { permission, accessScope };
-      }
-    }
-
-    return selectedGrant;
-  }
-
-  private resolveBranchReadAccessScope(
-    id: number,
-    currentUser: User,
-  ): { businessId?: number; allowedBranchIds?: number[] } {
-    const authorization = this.requireAuthorization(currentUser);
-
-    if (authorization.isSuperadmin) {
-      return {};
-    }
-
-    const businessId = this.requireBusinessUserBusinessId(
-      authorization.businessId,
-    );
-    const accessScope = authorization.permissions['branch.manage'];
-
-    if (
-      accessScope &&
-      ACCESS_SCOPE_WEIGHT[accessScope] >= ACCESS_SCOPE_WEIGHT.business
-    ) {
-      return { businessId };
-    }
-
-    if (!authorization.branchIds.includes(id)) {
-      throw new ForbiddenException('Branch is not assigned to user');
-    }
-
     return {
-      businessId,
-      allowedBranchIds: authorization.branchIds,
+      businessId: this.requireBusinessUserBusinessId(authorization.businessId),
     };
   }
 
@@ -297,17 +155,11 @@ export class BranchesService {
     id: number,
     currentUser: User,
   ): Promise<Branch> {
-    const updateScope = this.resolveBranchAccessScope(id, currentUser, [
-      'branch.manage',
-      'business.settings',
-    ]);
-    const branch =
-      updateScope.businessId === undefined
-        ? await this.branchesRepository.findById(id)
-        : await this.branchesRepository.findByIdForBusiness(
-            id,
-            updateScope.businessId,
-          );
+    const updateScope = this.resolveBranchAccessScope(currentUser);
+    const branch = await this.branchesRepository.findByIdForBusiness(
+      id,
+      updateScope.businessId,
+    );
 
     if (!branch) {
       throw new NotFoundException('Branch not found');
@@ -339,11 +191,7 @@ export class BranchesService {
   async removeForBusiness(id: number, currentUser: User) {
     this.validatePositiveInteger(id, 'id');
 
-    const accessScope = this.resolveBranchAccessScope(id, currentUser);
-
-    if (accessScope.businessId === undefined) {
-      return this.remove(id);
-    }
+    const accessScope = this.resolveBranchAccessScope(currentUser);
 
     return this.branchesRepository.removeForBusiness(
       id,

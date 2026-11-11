@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -177,13 +176,6 @@ export class CustomersService {
   }
 
   private resolveBusinessId(user: User, requestedBusinessId?: unknown): number {
-    const permission = this.authorizationScope.requirePermission(
-      user,
-      'customer.manage',
-    );
-    // El esquema no tiene una relación de propiedad de clientes por usuario.
-    if (permission.access_scope === 'own')
-      throw new ForbiddenException('Own customer scope is not supported');
     return this.authorizationScope.resolveBusinessId(user, requestedBusinessId);
   }
 

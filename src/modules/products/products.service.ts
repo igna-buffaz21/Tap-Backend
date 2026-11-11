@@ -10,14 +10,12 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductStatusDto } from './dto/update-product-status.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductAccessFilter, ProductsRepository } from './products.repository';
-import type { RolePermissionAccessScope } from '../auth/interfaces/auth-user.interface';
 
-const STATUSES = ['active', 'inactive'] as const;
+const STATUSES = ['ACTIVE', 'INACTIVE'] as const;
 const UNITS = ['unit', 'kg', 'g', 'l', 'ml', 'box', 'pack'] as const;
 
 interface StockAccess {
   businessId: number;
-  accessScope: RolePermissionAccessScope;
   filter?: ProductAccessFilter;
 }
 
@@ -138,19 +136,8 @@ export class ProductsService {
       throw new ForbiddenException('Authorization context is required');
     }
 
-    const accessScope = authorization.permissions['stock.manage'];
-
-    if (!accessScope) {
-      throw new ForbiddenException('Missing permission stock.manage');
-    }
-
     return {
       businessId: this.requireBusinessUserBusinessId(authorization.businessId),
-      accessScope,
-      filter:
-        accessScope === 'business'
-          ? undefined
-          : { allowedBranchIds: authorization.branchIds },
     };
   }
 
@@ -393,7 +380,7 @@ export class ProductsService {
       throw new BadRequestException('status must be a string');
     }
 
-    const status = value.trim().toLowerCase();
+    const status = value.trim().toUpperCase();
 
     if (!STATUSES.includes(status as (typeof STATUSES)[number])) {
       throw new BadRequestException('status must be active or inactive');

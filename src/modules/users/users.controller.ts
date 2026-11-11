@@ -17,11 +17,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import {
-  RequireAnyPermission,
-  RequirePermission,
-  SuperadminOnly,
-} from '../auth/decorators/require-permission.decorator';
 import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -34,15 +29,16 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Post()
-  @SuperadminOnly()
   @ApiOperation({ summary: 'Crear usuario' })
   @ApiBody({ type: CreateUserDto })
-  create(@Body() createUserDto: CreateUserDto) {
-    return this.usersService.create(createUserDto);
+  create(
+    @Body() createUserDto: CreateUserDto,
+    @CurrentUser() currentUser: User,
+  ) {
+    return this.usersService.create(createUserDto, currentUser);
   }
 
   @Get()
-  @RequireAnyPermission('user.read', 'user.manage')
   @ApiOperation({ summary: 'Listar usuarios' })
   @ApiQuery({ name: 'branchId', required: false, example: 3 })
   findAll(
@@ -53,14 +49,12 @@ export class UsersController {
   }
 
   @Get(':id')
-  @RequireAnyPermission('user.read', 'user.manage')
   @ApiParam({ name: 'id', example: 1 })
   findOne(@Param('id') id: string, @CurrentUser() currentUser: User) {
     return this.usersService.findOne(+id, currentUser);
   }
 
   @Patch(':id')
-  @RequirePermission('user.manage')
   @ApiParam({ name: 'id', example: 1 })
   update(
     @Param('id') id: string,
@@ -71,7 +65,6 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @RequirePermission('user.manage')
   @ApiParam({ name: 'id', example: 1 })
   remove(@Param('id') id: string, @CurrentUser() currentUser: User) {
     return this.usersService.remove(+id, currentUser);

@@ -31,3 +31,8 @@ export interface EpcWriteOptions {
   antenna: number;
   password?: string;
 }
+
+export interface SingleTagReadResult {
+  found: boolean;
+  tag: TagReading | null;
+}

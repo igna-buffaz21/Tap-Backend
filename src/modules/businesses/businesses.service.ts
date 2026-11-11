@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { AuthorizationScopeService } from '../auth/authorization-scope.service';
 import { User } from '../users/entities/user.entity';
 import { CreateBusinessDto } from './dto/create-business.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
@@ -6,51 +7,35 @@ import { BusinessesRepository } from './businesses.repository';
 
 @Injectable()
 export class BusinessesService {
-  constructor(private readonly businessesRepository: BusinessesRepository) {}
+  constructor(
+    private readonly businessesRepository: BusinessesRepository,
+    private readonly authorizationScope: AuthorizationScopeService,
+  ) {}
 
   create(createBusinessDto: CreateBusinessDto) {
     return this.businessesRepository.create(createBusinessDto);
   }
 
-  findAll() {
-    return this.businessesRepository.findAll();
+  async findAll(currentUser: User) {
+    const business = await this.businessesRepository.findById(
+      this.authorizationScope.resolveBusinessId(currentUser),
+    );
+    return business ? [business] : [];
   }
 
-  findOne(id: number) {
-    return this.businessesRepository.findById(id);
+  findOne(id: number, currentUser: User) {
+    const businessId = this.authorizationScope.resolveBusinessId(currentUser, id);
+    return this.businessesRepository.findById(businessId);
   }
 
   update(id: number, updateBusinessDto: UpdateBusinessDto, currentUser: User) {
-    this.assertCanUpdateBusiness(id, currentUser);
+    this.authorizationScope.resolveBusinessId(currentUser, id);
 
     return this.businessesRepository.update(id, updateBusinessDto);
   }
 
-  remove(id: number) {
+  remove(id: number, currentUser: User) {
+    this.authorizationScope.resolveBusinessId(currentUser, id);
     return this.businessesRepository.remove(id);
-  }
-
-  private assertCanUpdateBusiness(id: number, currentUser: User): void {
-    const authorization = currentUser.authorization;
-
-    if (!authorization) {
-      throw new ForbiddenException('Authorization context is required');
-    }
-
-    if (authorization.isSuperadmin) {
-      return;
-    }
-
-    if (authorization.permissions['business.settings'] !== 'business') {
-      throw new ForbiddenException('Business scope is required');
-    }
-
-    if (!authorization.businessId) {
-      throw new ForbiddenException('User must belong to a business');
-    }
-
-    if (authorization.businessId !== id) {
-      throw new ForbiddenException('Cannot access another business');
-    }
   }
 }

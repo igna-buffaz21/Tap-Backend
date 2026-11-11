@@ -20,7 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "gr": "node src/common/scripts/generate-resource.js",
     "esp32:console": "ts-node src/common/scripts/esp32-console.ts",
-    "esp32:flow": "ts-node src/common/scripts/rfid-flow-console.ts"
+    "esp32:flow": "ts-node src/common/scripts/rfid-flow-console.ts",
+    "esp32:read": "ts-node src/common/scripts/rfid-read.ts"
   },
   "dependencies": {
     "@clerk/express": "^2.1.61",

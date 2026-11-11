@@ -151,21 +151,10 @@ export class PaymentsService {
   private async resolveAccess(user: User): Promise<PaymentAccess> {
     const authorization = this.authorizationScope.requireAuthorization(user);
     const businessId = this.authorizationScope.resolveBusinessId(user);
-    const permission = this.authorizationScope.requirePermission(
-      user,
-      'stock.manage',
-    );
     return {
       businessId,
       userId: authorization.userId,
-      filter: {
-        allowedBranchIds: this.authorizationScope.getAllowedBranchIds(
-          user,
-          'stock.manage',
-        ),
-        createdByUserId:
-          permission.access_scope === 'own' ? authorization.userId : undefined,
-      },
+      filter: {},
     };
   }
 

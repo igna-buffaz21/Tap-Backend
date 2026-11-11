@@ -280,32 +280,12 @@ export class SalesService {
   ): SaleAccess {
     const authorization =
       this.authorizationScope.requireAuthorization(currentUser);
-    const permission = this.authorizationScope.requirePermission(
-      currentUser,
-      'stock.manage',
-    );
-    const businessId = this.authorizationScope.resolveBusinessId(
-      currentUser,
-      businessIdValue,
-    );
-    const allowedBranchIds = this.authorizationScope.getAllowedBranchIds(
-      currentUser,
-      'stock.manage',
-    );
-
     return {
-      businessId,
+      businessId: this.authorizationScope.resolveBusinessId(
+        currentUser,
+        businessIdValue,
+      ),
       userId: authorization.userId,
-      filter:
-        allowedBranchIds === undefined && permission.access_scope !== 'own'
-          ? undefined
-          : {
-              allowedBranchIds,
-              createdByUserId:
-                permission.access_scope === 'own'
-                  ? authorization.userId
-                  : undefined,
-            },
     };
   }
 

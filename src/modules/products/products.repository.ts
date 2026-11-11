@@ -209,7 +209,7 @@ export class ProductsRepository {
         dto.unit ?? 'unit',
         dto.cost_price ?? null,
         dto.sale_price ?? null,
-        dto.status ?? 'active',
+        dto.status ?? 'ACTIVE',
       ],
     );
 

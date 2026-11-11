@@ -11,7 +11,7 @@ import { UpdateProductCategoryStatusDto } from './dto/update-product-category-st
 import { UpdateProductCategoryDto } from './dto/update-product-category.dto';
 import { ProductCategoriesRepository } from './product-categories.repository';
 
-const STATUSES = ['active', 'inactive'] as const;
+const STATUSES = ['ACTIVE', 'INACTIVE'] as const;
 
 @Injectable()
 export class ProductCategoriesService {
@@ -126,10 +126,6 @@ export class ProductCategoriesService {
       throw new ForbiddenException('Authorization context is required');
     }
 
-    if (!authorization.permissions['stock.manage']) {
-      throw new ForbiddenException('Missing permission stock.manage');
-    }
-
     return this.requireBusinessUserBusinessId(authorization.businessId);
   }
 
@@ -220,7 +216,7 @@ export class ProductCategoriesService {
       throw new BadRequestException('status must be a string');
     }
 
-    const status = value.trim().toLowerCase();
+    const status = value.trim().toUpperCase();
 
     if (!STATUSES.includes(status as (typeof STATUSES)[number])) {
       throw new BadRequestException('status must be active or inactive');

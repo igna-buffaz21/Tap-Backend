@@ -9,8 +9,6 @@ const user = {
     businessId: 10,
     branchIds: [20],
     roles: [],
-    permissions: { 'customer.manage': 'business' },
-    isSuperadmin: false,
   },
 } as User;
 
@@ -62,15 +60,12 @@ describe('CustomersService without booking data', () => {
     ).resolves.toMatchObject({ pagination: { total: 4, totalPages: 1 } });
   });
 
-  it('denies unsupported own scope instead of consulting removed conversation tables', async () => {
+  it('rejects a user without a business', async () => {
     await expect(
       service.findOneForBusiness(3, {
-        authorization: {
-          ...user.authorization!,
-          permissions: { 'customer.manage': 'own' },
-        },
+        authorization: { ...user.authorization!, businessId: null },
       } as User),
-    ).rejects.toThrow('Own customer scope is not supported');
+    ).rejects.toThrow('User must belong to a business');
     expect(repository.findByIdForBusiness).not.toHaveBeenCalled();
   });
 });

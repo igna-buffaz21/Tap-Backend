@@ -10,8 +10,6 @@ const user = {
     businessId: 1,
     branchIds: [2],
     roles: [],
-    permissions: { 'stock.manage': 'branch' },
-    isSuperadmin: false,
   },
 } as User;
 
@@ -43,7 +41,7 @@ describe('Sale payments without cash or bookings', () => {
     );
   });
 
-  it('rejects a sale outside the permitted tenant or branches before inserting a payment', async () => {
+  it('rejects a sale outside the authenticated business before inserting a payment', async () => {
     tx.lockTarget.mockResolvedValue(null);
     await expect(
       service.createForBusiness({ sale_id: 3, amount: 10 }, user),
@@ -51,7 +49,7 @@ describe('Sale payments without cash or bookings', () => {
     expect(tx.insert).not.toHaveBeenCalled();
     expect(repository.withTransaction.mock.calls[0][0]).toMatchObject({
       businessId: 1,
-      filter: { allowedBranchIds: [2] },
+      filter: {},
     });
   });
 
@@ -92,12 +90,23 @@ describe('Sale payments without cash or bookings', () => {
     expect(repository.withTransaction).not.toHaveBeenCalled();
   });
 
-  it('rejects missing permissions before opening a transaction', async () => {
+  it('allows payments within the business without individual grants', async () => {
+    await expect(
+      service.createForBusiness({ sale_id: 3, amount: 10 }, user),
+    ).resolves.toMatchObject({ id: 1 });
+    expect(repository.withTransaction.mock.calls[0][0]).toEqual({
+      businessId: 1,
+      userId: 7,
+      filter: {},
+    });
+  });
+
+  it('rejects missing business context before opening a transaction', async () => {
     await expect(
       service.createForBusiness({ sale_id: 3, amount: 10 }, {
-        authorization: { ...user.authorization!, permissions: {} },
+        authorization: { ...user.authorization!, businessId: null },
       } as User),
-    ).rejects.toThrow('Missing permission');
+    ).rejects.toThrow('User must belong to a business');
     expect(repository.withTransaction).not.toHaveBeenCalled();
   });
 });

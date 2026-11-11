@@ -20,7 +20,6 @@ import {
   StockMovementPage,
   StockMovementsRepository,
 } from './stock-movements.repository';
-import type { RolePermissionAccessScope } from '../auth/interfaces/auth-user.interface';
 
 export interface Pagination {
   page: number;
@@ -36,7 +35,6 @@ export interface PaginatedStockMovementsResponse {
 
 interface StockAccess {
   businessId: number;
-  accessScope: RolePermissionAccessScope;
   filter?: StockMovementAccessFilter;
 }
 
@@ -232,25 +230,8 @@ export class StockMovementsService {
       throw new ForbiddenException('Authorization context is required');
     }
 
-    const accessScope = authorization.permissions['stock.manage'];
-
-    if (!accessScope) {
-      throw new ForbiddenException('Missing permission stock.manage');
-    }
-
-    const filter =
-      accessScope === 'business'
-        ? undefined
-        : {
-            allowedBranchIds: authorization.branchIds,
-            createdByUserId: authorization.userId,
-            ownOnly: accessScope === 'own',
-          };
-
     return {
       businessId: this.requireBusinessUserBusinessId(authorization.businessId),
-      accessScope,
-      filter,
     };
   }
 

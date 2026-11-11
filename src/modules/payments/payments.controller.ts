@@ -15,7 +15,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { User } from '../users/entities/user.entity';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -24,7 +23,6 @@ import { UpdatePaymentDto } from './dto/update-payment.dto';
 
 @ApiTags('payments')
 @ApiBearerAuth()
-@RequirePermission('stock.manage')
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}

@@ -9,11 +9,9 @@ import {
   ProductStockAccessFilter,
   ProductStocksRepository,
 } from './product-stocks.repository';
-import type { RolePermissionAccessScope } from '../auth/interfaces/auth-user.interface';
 
 interface StockAccess {
   businessId: number;
-  accessScope: RolePermissionAccessScope;
   filter?: ProductStockAccessFilter;
 }
 
@@ -103,19 +101,8 @@ export class ProductStocksService {
       throw new ForbiddenException('Authorization context is required');
     }
 
-    const accessScope = authorization.permissions['stock.manage'];
-
-    if (!accessScope) {
-      throw new ForbiddenException('Missing permission stock.manage');
-    }
-
     return {
       businessId: this.requireBusinessUserBusinessId(authorization.businessId),
-      accessScope,
-      filter:
-        accessScope === 'business'
-          ? undefined
-          : { allowedBranchIds: authorization.branchIds },
     };
   }
 

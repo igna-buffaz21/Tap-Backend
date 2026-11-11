@@ -1,7 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { SuperadminOnly } from '../auth/decorators/require-permission.decorator';
 import { User } from '../users/entities/user.entity';
 import { BusinessesService } from './businesses.service';
 import { CreateBusinessDto } from './dto/create-business.dto';
@@ -14,7 +13,6 @@ export class BusinessesController {
   constructor(private readonly businessesService: BusinessesService) {}
 
   @Post()
-  @SuperadminOnly()
   @ApiOperation({ summary: 'Crear negocio' })
   @ApiBody({ type: CreateBusinessDto })
   create(@Body() createBusinessDto: CreateBusinessDto) {
@@ -22,21 +20,18 @@ export class BusinessesController {
   }
 
   @Get()
-  @SuperadminOnly()
   @ApiOperation({ summary: 'Listar negocios' })
-  findAll() {
-    return this.businessesService.findAll();
+  findAll(@CurrentUser() currentUser: User) {
+    return this.businessesService.findAll(currentUser);
   }
 
   @Get(':id')
-  @SuperadminOnly()
   @ApiOperation({ summary: 'Obtener negocio por id' })
-  findOne(@Param('id') id: string) {
-    return this.businessesService.findOne(+id);
+  findOne(@Param('id') id: string, @CurrentUser() currentUser: User) {
+    return this.businessesService.findOne(+id, currentUser);
   }
 
   @Patch(':id')
-  @SuperadminOnly()
   update(
     @Param('id') id: string,
     @Body() updateBusinessDto: UpdateBusinessDto,

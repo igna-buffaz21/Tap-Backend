@@ -161,8 +161,8 @@ describe('ESP32 services over the shared USB connection', () => {
     Object.defineProperty(port, 'isOpen', { get: () => isOpen });
     jest.mocked(SerialPort).mockImplementation(() => port);
     serial = new SerialService();
-    reader = new Cm2000Service(serial);
     door = new DoorService(serial);
+    reader = new Cm2000Service(serial, door);
     const connected = serial.connect('/dev/test-esp32');
     await jest.advanceTimersByTimeAsync(2500);
     await connected;

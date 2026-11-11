@@ -5,7 +5,7 @@ import { User } from '../../users/entities/user.entity';
 import { BranchesService } from '../branches.service';
 import { BRANCH_TYPES } from '../entities/branch.entity';
 
-describe('BranchesService update permissions', () => {
+describe('BranchesService business isolation', () => {
   const branchesRepository = {
     create: jest.fn(),
     adminCanManageBranch: jest.fn(),
@@ -33,9 +33,7 @@ describe('BranchesService update permissions', () => {
   }
 
   function createUser(overrides: Partial<User> = {}): User {
-    const role = overrides.role ?? 'admin';
     const businessId = overrides.business_id ?? 10;
-    const isSuperadmin = role === 'superadmin';
 
     return {
       id: 5,
@@ -51,22 +49,9 @@ describe('BranchesService update permissions', () => {
       updated_at: new Date('2026-08-25T00:00:00.000Z'),
       authorization: {
         userId: 5,
-        businessId: isSuperadmin ? null : Number(businessId),
-        branchIds: isSuperadmin ? [] : [20],
-        roles: [
-          {
-            id: isSuperadmin ? 99 : 5,
-            name: isSuperadmin ? 'Superadmin' : 'Encargado',
-            status: 'active',
-          },
-        ],
-        permissions: isSuperadmin
-          ? {}
-          : {
-              'branch.manage': 'branch',
-              'analytics.view': 'branch',
-            },
-        isSuperadmin,
+        businessId: Number(businessId),
+        branchIds: [20],
+        roles: [],
       },
       ...overrides,
     };
@@ -94,10 +79,7 @@ describe('BranchesService update permissions', () => {
       branchesRepository.create.mockResolvedValue({ id: 20 });
       branchesRepository.update.mockResolvedValue({ id: 20 });
 
-      await service.createForBusiness(
-        createDto,
-        createUser({ role: 'superadmin', business_id: null, branch_id: null }),
-      );
+      await service.createForBusiness(createDto, createUser());
       expect(branchesRepository.create).toHaveBeenCalledWith({
         ...createDto,
         branch_type: branchType ?? null,
@@ -124,15 +106,11 @@ describe('BranchesService update permissions', () => {
             slug: 'centro',
             branch_type: branchType,
           } as never,
-          createUser({ role: 'superadmin', business_id: null, branch_id: null }),
+          createUser(),
         ),
       ).toThrow(BadRequestException);
       await expect(
-        service.update(
-          20,
-          { branch_type: branchType } as never,
-          createUser(),
-        ),
+        service.update(20, { branch_type: branchType } as never, createUser()),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(branchesRepository.create).not.toHaveBeenCalled();
       expect(branchesRepository.update).not.toHaveBeenCalled();
@@ -248,7 +226,7 @@ describe('BranchesService update permissions', () => {
         {
           lat: -91,
         },
-        createUser({ role: 'superadmin', business_id: null, branch_id: null }),
+        createUser(),
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(branchesRepository.update).not.toHaveBeenCalled();
@@ -271,7 +249,7 @@ describe('BranchesService update permissions', () => {
             sunday: [],
           },
         },
-        createUser({ role: 'superadmin', business_id: null, branch_id: null }),
+        createUser(),
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(branchesRepository.update).not.toHaveBeenCalled();
@@ -293,50 +271,42 @@ describe('BranchesService update permissions', () => {
     expect(branchesRepository.findByIdForBusiness).toHaveBeenCalledWith(
       20,
       user.business_id,
-      [20],
     );
     expect(branchesRepository.findById).not.toHaveBeenCalled();
   });
 
-  it('rejects admin updates for branches not assigned to the admin', async () => {
+  it('allows another branch within the same business', async () => {
     const service = createService();
-
-    await expect(
-      service.update(21, { name: 'Sur' }, createUser()),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-    expect(branchesRepository.update).not.toHaveBeenCalled();
-  });
-
-  it('allows business settings users to update an assigned branch', async () => {
-    const service = createService();
-    const user = createUser();
-
-    user.authorization!.permissions = {
-      'business.settings': 'branch',
-    };
-    branchesRepository.update.mockResolvedValue({ id: 20 });
-
-    await service.update(20, { name: 'Centro' }, user);
-
+    branchesRepository.update.mockResolvedValue({ id: 21 });
+    await service.update(21, { name: 'Sur' }, createUser());
     expect(branchesRepository.update).toHaveBeenCalledWith(
-      20,
-      { name: 'Centro' },
-      user.business_id,
+      21,
+      { name: 'Sur' },
+      10,
     );
   });
 
-  it('rejects business settings users with own scope', async () => {
+  it('rejects creating a branch for another business', () => {
+    expect(() =>
+      createService().createForBusiness(
+        { business_id: 11, name: 'Sur', slug: 'sur' },
+        createUser(),
+      ),
+    ).toThrow(ForbiddenException);
+    expect(branchesRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps branch updates scoped to the business even for a legacy admin role', async () => {
     const service = createService();
-    const user = createUser();
-
-    user.authorization!.permissions = {
-      'business.settings': 'own',
-    };
-
+    branchesRepository.update.mockResolvedValue(null);
     await expect(
-      service.update(20, { name: 'Centro' }, user),
-    ).rejects.toThrow('Branch scope is required');
-    expect(branchesRepository.update).not.toHaveBeenCalled();
+      service.update(99, { name: 'Sur' }, createUser({ role: 'SUPERADMIN' })),
+    ).resolves.toBeNull();
+    expect(branchesRepository.update).toHaveBeenCalledWith(
+      99,
+      { name: 'Sur' },
+      10,
+    );
   });
 
   it('rejects protected fields in the update payload', async () => {
@@ -349,7 +319,7 @@ describe('BranchesService update permissions', () => {
           name: 'Centro',
           status: 'inactive',
         } as never,
-        createUser({ role: 'superadmin', business_id: null, branch_id: null }),
+        createUser(),
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(branchesRepository.adminCanManageBranch).not.toHaveBeenCalled();
@@ -386,14 +356,11 @@ describe('BranchesService update permissions', () => {
     nowSpy.mockRestore();
   });
 
-  it('allows business settings users to generate an upload signature for an assigned branch', async () => {
+  it('generates cover signatures within the authenticated business', async () => {
     const service = createService();
     const user = createUser();
     const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1315060510000);
 
-    user.authorization!.permissions = {
-      'business.settings': 'branch',
-    };
     branchesRepository.findByIdForBusiness.mockResolvedValue({
       id: 20,
       business_id: 10,

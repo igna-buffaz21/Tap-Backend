@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import type { RolePermissionAccessScope } from '../interfaces/auth-user.interface';
 import type { UserStatus } from '../interfaces/auth-user.interface';
 
 export class AuthMeRoleDto {
@@ -40,17 +39,4 @@ export class AuthMeDto {
 
   @ApiProperty({ type: [AuthMeRoleDto] })
   roles!: AuthMeRoleDto[];
-
-  @ApiProperty({
-    type: 'object',
-    additionalProperties: {
-      type: 'string',
-      enum: ['own', 'branch', 'business'],
-    },
-    example: {
-      'customer.manage': 'branch',
-      'stock.manage': 'branch',
-    },
-  })
-  permissions!: Record<string, RolePermissionAccessScope>;
 }

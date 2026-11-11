@@ -15,7 +15,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { User } from '../users/entities/user.entity';
 import { CustomersService } from './customers.service';
 import { CreateCustomerDto } from './dto/create-customer.dto';
@@ -24,7 +23,6 @@ import { UpdateCustomerDto } from './dto/update-customer.dto';
 
 @ApiTags('customers')
 @ApiBearerAuth()
-@RequirePermission('customer.manage')
 @Controller('customers')
 export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
@@ -36,7 +34,7 @@ export class CustomersController {
     required: false,
     example: 1,
     description:
-      'Requerido para superadmin. Usuarios de negocio usan automaticamente su negocio.',
+      'Opcional. Debe coincidir con el negocio del usuario autenticado.',
   })
   @ApiBody({ type: CreateCustomerDto })
   create(
@@ -78,7 +76,7 @@ export class CustomersController {
     required: false,
     example: 1,
     description:
-      'Requerido para superadmin. Usuarios de negocio usan automaticamente su negocio.',
+      'Opcional. Debe coincidir con el negocio del usuario autenticado.',
   })
   getStats(
     @CurrentUser() currentUser: User,
@@ -94,7 +92,7 @@ export class CustomersController {
     required: false,
     example: 1,
     description:
-      'Requerido para superadmin. Usuarios de negocio usan automaticamente su negocio.',
+      'Opcional. Debe coincidir con el negocio del usuario autenticado.',
   })
   @ApiQuery({
     name: 'phone',
@@ -137,7 +135,7 @@ export class CustomersController {
     required: false,
     example: 1,
     description:
-      'Requerido para superadmin. Usuarios de negocio usan automaticamente su negocio.',
+      'Opcional. Debe coincidir con el negocio del usuario autenticado.',
   })
   update(
     @Param('id') id: string,
@@ -161,7 +159,7 @@ export class CustomersController {
     required: false,
     example: 1,
     description:
-      'Requerido para superadmin. Usuarios de negocio usan automaticamente su negocio.',
+      'Opcional. Debe coincidir con el negocio del usuario autenticado.',
   })
   updateStatus(
     @Param('id') id: string,

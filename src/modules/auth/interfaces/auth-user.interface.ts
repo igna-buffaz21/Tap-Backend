@@ -1,5 +1,4 @@
 import { User } from '../../users/entities/user.entity';
-export type RolePermissionAccessScope = 'own' | 'branch' | 'business';
 
 export type UserStatus = 'active' | 'inactive';
 
@@ -9,18 +8,11 @@ export interface AuthRoleSummary {
   status: string;
 }
 
-export interface AuthPermissionGrant {
-  key: string;
-  access_scope: RolePermissionAccessScope;
-}
-
 export interface AuthAuthorizationContext {
   userId: number;
   businessId: number | null;
   branchIds: number[];
   roles: AuthRoleSummary[];
-  permissions: Record<string, RolePermissionAccessScope>;
-  isSuperadmin: boolean;
 }
 
 export interface ClerkJwtPayload {
@@ -38,5 +30,4 @@ export interface AuthUser {
   claims: ClerkJwtPayload;
   user: User;
   authorization: AuthAuthorizationContext;
-  currentPermission?: AuthPermissionGrant;
 }

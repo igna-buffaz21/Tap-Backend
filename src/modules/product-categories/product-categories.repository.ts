@@ -28,7 +28,7 @@ export class ProductCategoriesRepository {
         VALUES ($1, $2, $3, $4)
         RETURNING *
       `,
-      [businessId, dto.name, dto.description ?? null, dto.status ?? 'active'],
+      [businessId, dto.name, dto.description ?? null, dto.status ?? 'ACTIVE'],
     );
 
     return result.rows[0];

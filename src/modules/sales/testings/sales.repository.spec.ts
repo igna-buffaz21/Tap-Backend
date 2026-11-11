@@ -29,8 +29,6 @@ describe('SalesRepository stock transaction', () => {
         businessId: 1,
         branchIds: [2],
         roles: [],
-        permissions: { 'stock.manage': 'business' },
-        isSuperadmin: false,
       },
     }) as User;
   const sale = {

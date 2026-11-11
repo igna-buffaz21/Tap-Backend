@@ -1,4 +1,9 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  OnModuleDestroy,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { EventEmitter } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { CM2000, ESP32 } from '../types/esp32.constants';
@@ -6,11 +11,13 @@ import type {
   AntennaPowers,
   EpcWriteOptions,
   InventoryOptions,
+  SingleTagReadResult,
   TagReading,
   TagRecord,
   TemperatureReading,
 } from '../types/esp32.types';
 import { SerialService } from './serial.service';
+import { DoorService } from './door.service';
 
 @Injectable()
 export class Cm2000Service implements OnModuleDestroy {
@@ -39,6 +46,7 @@ export class Cm2000Service implements OnModuleDestroy {
   private temperatureTimer: ReturnType<typeof setTimeout> | null = null;
   private temperatureGeneration = 0;
   private destroyed = false;
+  private singleReadActive = false;
   private connectionGeneration = 0;
 
   private readonly onData = (data: Buffer) => this.decode(data);
@@ -57,7 +65,10 @@ export class Cm2000Service implements OnModuleDestroy {
     this.responses.emit('failure', new Error('Conexión serial perdida.'));
   };
 
-  constructor(private readonly serial: SerialService) {
+  constructor(
+    private readonly serial: SerialService,
+    private readonly door: DoorService,
+  ) {
     serial.events.on('rfid', this.onData);
     serial.events.on('connected', this.onConnected);
     serial.events.on('disconnected', this.onDisconnected);
@@ -74,6 +85,101 @@ export class Cm2000Service implements OnModuleDestroy {
     this.serial.events.off('connected', this.onConnected);
     this.serial.events.off('disconnected', this.onDisconnected);
     this.serial.events.off('transportError', this.onDisconnected);
+  }
+
+  async readSingleTag(
+    portPath?: string,
+    signal?: AbortSignal,
+  ): Promise<SingleTagReadResult> {
+    if (
+      this.singleReadActive ||
+      this.isInventoryRunning ||
+      this.pendingOperations > 0
+    ) {
+      throw new ConflictException('El lector RFID está ocupado.');
+    }
+    this.singleReadActive = true;
+    try {
+      signal?.throwIfAborted();
+      if (!this.serial.isConnected) {
+        if (portPath === undefined) {
+          const candidates = (await this.serial.listPorts()).filter(
+            (port) =>
+              port.vendorId ||
+              /^(\/dev\/(ttyUSB|ttyACM)|COM\d+$)/i.test(port.path),
+          );
+          if (candidates.length !== 1) {
+            throw new Error(
+              'Se necesita un único puerto USB serial disponible para conectar el ESP32.',
+            );
+          }
+          portPath = candidates[0].path;
+        }
+        signal?.throwIfAborted();
+        await this.serial.connect(portPath);
+      }
+
+      await this.stopAllOperations();
+      signal?.throwIfAborted();
+      // No hay sensor de posición: null requiere enviar nuevamente la apertura.
+      if (this.door.state !== 'open') await this.door.open();
+      signal?.throwIfAborted();
+      const tag = await new Promise<TagReading | null>((resolve, reject) => {
+        const readings = new Map<string, TagReading>();
+        const deadline = performance.now() + 5000;
+        const cleanup = () => {
+          clearTimeout(timer);
+          this.events.off('tag', onTag);
+          this.events.off('operationError', onError);
+          this.serial.events.off('disconnected', onDisconnect);
+          this.serial.events.off('transportError', onDisconnect);
+          signal?.removeEventListener('abort', onAbort);
+        };
+        const onTag = (reading: TagReading) => {
+          if (performance.now() >= deadline) return;
+          readings.set(reading.epc, { ...reading });
+        };
+        const onError = (message: string) => {
+          cleanup();
+          reject(new Error(message));
+        };
+        const onDisconnect = () =>
+          onError('Se perdió la conexión con el ESP32.');
+        const onAbort = () => onError('Lectura cancelada.');
+        const timer = setTimeout(() => {
+          cleanup();
+          resolve(readings.size === 1 ? [...readings.values()][0] : null);
+        }, 5000);
+
+        this.events.on('tag', onTag);
+        this.events.on('operationError', onError);
+        this.serial.events.on('disconnected', onDisconnect);
+        this.serial.events.on('transportError', onDisconnect);
+        signal?.addEventListener('abort', onAbort, { once: true });
+        if (signal?.aborted) {
+          onAbort();
+          return;
+        }
+        try {
+          this.startInventory({ antenna: 4 });
+        } catch (error) {
+          cleanup();
+          reject(error);
+        }
+      });
+      return { found: tag !== null, tag };
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        error instanceof Error ? error.message : 'Error de lectura RFID.',
+      );
+    } finally {
+      // Esperar la ronda pendiente permite cerrar el puerto sin truncar respuestas.
+      try {
+        await this.stopAllOperations();
+      } finally {
+        this.singleReadActive = false;
+      }
+    }
   }
 
   get isInventoryRunning(): boolean {

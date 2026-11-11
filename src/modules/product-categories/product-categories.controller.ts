@@ -13,7 +13,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { User } from '../users/entities/user.entity';
 import { CreateProductCategoryDto } from './dto/create-product-category.dto';
 import { UpdateProductCategoryStatusDto } from './dto/update-product-category-status.dto';
@@ -22,7 +21,6 @@ import { ProductCategoriesService } from './product-categories.service';
 
 @ApiTags('product-categories')
 @ApiBearerAuth()
-@RequirePermission('stock.manage')
 @Controller('product-categories')
 export class ProductCategoriesController {
   constructor(

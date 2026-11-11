@@ -8,7 +8,6 @@ import {
 import { AuthService } from './auth.service';
 import { ClerkAuthGuard } from './guards/clerk-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
-import { SkipPermissionCheck } from './decorators/require-permission.decorator';
 import { AuthMeDto } from './dto/auth-me.dto';
 import { User } from '../users/entities/user.entity';
 import type { AuthenticatedRequest } from './interfaces/authenticated-request.interface';
@@ -21,7 +20,6 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(ClerkAuthGuard)
-  @SkipPermissionCheck()
   @ApiOperation({ summary: 'Obtener usuario autenticado' })
   @ApiOkResponse({ type: AuthMeDto })
   me(

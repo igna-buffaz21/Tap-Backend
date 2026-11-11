@@ -6,10 +6,9 @@ import { ConfigService } from '@nestjs/config';
 import type { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ClerkAuthGuard } from '../guards/clerk-auth.guard';
-import { PermissionGuard } from '../guards/permission.guard';
 import type { AuthenticatedRequest } from '../interfaces/authenticated-request.interface';
 
-describe('Authentication after removing database RBAC', () => {
+describe('Authentication with business isolation', () => {
   const clerk = { verifyToken: jest.fn() };
   const users = { findAuthenticatedByClerkId: jest.fn() };
   const repository = {
@@ -48,9 +47,9 @@ describe('Authentication after removing database RBAC', () => {
     expect(auth.authorization).toMatchObject({
       businessId: 10,
       branchIds: [20],
-      permissions: {},
-      isSuperadmin: false,
     });
+    expect(auth.authorization).not.toHaveProperty('permissions');
+    expect(auth.authorization).not.toHaveProperty('isSuperadmin');
     expect(repository.findAssignedBranchIds).toHaveBeenCalledWith(7, 10);
   });
 
@@ -77,8 +76,6 @@ describe('Authentication after removing database RBAC', () => {
     const auth = await service.authenticate(undefined);
     expect(auth.authorization).toMatchObject({
       businessId: 10,
-      isSuperadmin: false,
-      permissions: { 'stock.manage': 'business' },
     });
     expect(repository.findDevelopmentUser).toHaveBeenCalledWith(undefined);
     expect(clerk.verifyToken).not.toHaveBeenCalled();
@@ -134,10 +131,10 @@ describe('Authentication after removing database RBAC', () => {
     await expect(
       new ClerkAuthGuard(service, reflector).canActivate(context),
     ).resolves.toBe(true);
-    const permissionGuard = new PermissionGuard(reflector);
-    expect(permissionGuard.canActivate(context)).toBe(true);
+    const guard = new ClerkAuthGuard(service, reflector);
+    await expect(guard.canActivate(context)).resolves.toBe(true);
     request.query = { businessId: '11' };
-    expect(() => permissionGuard.canActivate(context)).toThrow(
+    await expect(guard.canActivate(context)).rejects.toThrow(
       'Cannot access another business',
     );
   });

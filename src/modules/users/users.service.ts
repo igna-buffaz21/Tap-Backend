@@ -5,7 +5,6 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { clerkClient } from '@clerk/express';
-import type { RolePermissionAccessScope } from '../auth/interfaces/auth-user.interface';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './entities/user.entity';
@@ -21,23 +20,33 @@ interface NormalizedCreateUserDto extends CreateUserDto {
   role: string;
 }
 
-interface UserManageAccess {
-  businessId: number;
-  accessScope: RolePermissionAccessScope;
-  branchIds: number[];
-}
-
 type UserResponse = Omit<User, 'role' | 'authorization'>;
-
-const USER_READ_PERMISSIONS = ['user.read', 'user.manage'] as const;
-const USER_MANAGE_PERMISSIONS = ['user.manage'] as const;
 
 @Injectable()
 export class UsersService {
   constructor(private readonly usersRepository: UsersRepository) {}
 
-  async create(createUserDto: CreateUserDto) {
-    const dto = await this.normalizeCreateDto(createUserDto);
+  async create(createUserDto: CreateUserDto, currentUser: User) {
+    const businessId = this.resolveUserBusinessId(currentUser);
+    if (
+      createUserDto.business_id !== undefined &&
+      createUserDto.business_id !== businessId
+    ) {
+      throw new ForbiddenException('Cannot access another business');
+    }
+    if (
+      createUserDto.branch_id !== undefined &&
+      createUserDto.branch_id !== null
+    ) {
+      await this.assertBranchBelongsToBusiness(
+        createUserDto.branch_id,
+        businessId,
+      );
+    }
+    const dto = await this.normalizeCreateDto({
+      ...createUserDto,
+      business_id: businessId,
+    });
 
     try {
       return this.mapUserResponse(await this.usersRepository.create(dto));
@@ -55,28 +64,15 @@ export class UsersService {
       branchIdValue,
       'branchId',
     );
-    const authorization = currentUser.authorization;
-
-    if (authorization?.isSuperadmin) {
-      const users =
-        branchId === undefined
-          ? await this.usersRepository.findAll()
-          : await this.usersRepository.findAllByBranch(branchId);
-
-      return users.map((user) => this.mapUserResponse(user));
-    }
-
-    const access = this.resolveUserAccess(currentUser, USER_READ_PERMISSIONS);
+    const businessId = this.resolveUserBusinessId(currentUser);
 
     if (branchId !== undefined) {
-      this.assertBranchAllowedForUserManageAccess(access, branchId);
-      await this.assertBranchBelongsToBusiness(branchId, access.businessId);
+      await this.assertBranchBelongsToBusiness(branchId, businessId);
     }
 
     const users = await this.usersRepository.findAllForBusiness(
-      access.businessId,
+      businessId,
       branchId,
-      this.getAllowedBranchIdsForUserManageAccess(access),
     );
 
     return users.map((user) => this.mapUserResponse(user));
@@ -84,22 +80,10 @@ export class UsersService {
 
   async findOne(id: number, currentUser: User) {
     const userId = this.normalizeRequiredPositiveInteger(id, 'id');
-    const authorization = currentUser.authorization;
-
-    if (authorization?.isSuperadmin) {
-      return this.mapNullableUserResponse(
-        await this.usersRepository.findById(userId),
-      );
-    }
-
-    const access = this.resolveUserAccess(currentUser, USER_READ_PERMISSIONS);
+    const businessId = this.resolveUserBusinessId(currentUser);
 
     return this.mapNullableUserResponse(
-      await this.usersRepository.findByIdForBusiness(
-        userId,
-        access.businessId,
-        this.getAllowedBranchIdsForUserManageAccess(access),
-      ),
+      await this.usersRepository.findByIdForBusiness(userId, businessId),
     );
   }
 
@@ -113,52 +97,31 @@ export class UsersService {
 
   async update(id: number, updateUserDto: UpdateUserDto, currentUser: User) {
     const userId = this.normalizeRequiredPositiveInteger(id, 'id');
-    const dto = this.normalizeUpdateDto(updateUserDto);
-    const authorization = currentUser.authorization;
-
-    if (authorization?.isSuperadmin) {
-      return this.mapNullableUserResponse(
-        await this.usersRepository.update(userId, dto),
-      );
+    const businessId = this.resolveUserBusinessId(currentUser);
+    if (
+      updateUserDto.business_id !== undefined &&
+      updateUserDto.business_id !== businessId
+    ) {
+      throw new ForbiddenException('Cannot access another business');
     }
-
-    const access = this.resolveUserAccess(currentUser, USER_MANAGE_PERMISSIONS);
+    const dto = this.normalizeUpdateDto(updateUserDto);
 
     if (dto.branch_id !== undefined && dto.branch_id !== null) {
-      this.assertBranchAllowedForUserManageAccess(access, dto.branch_id);
-      await this.assertBranchBelongsToBusiness(
-        dto.branch_id,
-        access.businessId,
-      );
+      await this.assertBranchBelongsToBusiness(dto.branch_id, businessId);
     }
 
-    dto.business_id = access.businessId;
+    dto.business_id = businessId;
 
     return this.mapNullableUserResponse(
-      await this.usersRepository.updateForBusiness(
-        userId,
-        access.businessId,
-        dto,
-        this.getAllowedBranchIdsForUserManageAccess(access),
-      ),
+      await this.usersRepository.updateForBusiness(userId, businessId, dto),
     );
   }
 
   remove(id: number, currentUser: User) {
     const userId = this.normalizeRequiredPositiveInteger(id, 'id');
-    const authorization = currentUser.authorization;
+    const businessId = this.resolveUserBusinessId(currentUser);
 
-    if (authorization?.isSuperadmin) {
-      return this.usersRepository.remove(userId);
-    }
-
-    const access = this.resolveUserAccess(currentUser, USER_MANAGE_PERMISSIONS);
-
-    return this.usersRepository.removeForBusiness(
-      userId,
-      access.businessId,
-      this.getAllowedBranchIdsForUserManageAccess(access),
-    );
+    return this.usersRepository.removeForBusiness(userId, businessId);
   }
 
   private async normalizeCreateDto(
@@ -375,99 +338,13 @@ export class UsersService {
     }
   }
 
-  private resolveUserAccess(
-    currentUser: User,
-    permissionKeys: readonly string[],
-    requestedBusinessId?: unknown,
-  ): UserManageAccess {
-    const authorization = currentUser.authorization;
-
-    if (!authorization) {
+  private resolveUserBusinessId(currentUser: User): number {
+    if (!currentUser.authorization) {
       throw new ForbiddenException('Authorization context is required');
     }
-
-    if (authorization.isSuperadmin) {
-      const businessId = this.normalizeOptionalPositiveInteger(
-        requestedBusinessId,
-        'businessId',
-      );
-
-      if (businessId === undefined) {
-        throw new BadRequestException('businessId is required for superadmin');
-      }
-
-      return {
-        businessId,
-        accessScope: 'business',
-        branchIds: [],
-      };
-    }
-
-    const accessScope = this.resolveAccessScope(
-      authorization.permissions,
-      permissionKeys,
+    return this.requireBusinessUserBusinessId(
+      currentUser.authorization.businessId,
     );
-
-    if (!accessScope) {
-      throw new ForbiddenException(
-        `Missing permission ${permissionKeys.join(' or ')}`,
-      );
-    }
-
-    const businessId = this.requireBusinessUserBusinessId(
-      authorization.businessId,
-    );
-    const parsedRequestedBusinessId = this.normalizeOptionalPositiveInteger(
-      requestedBusinessId,
-      'businessId',
-    );
-
-    if (
-      parsedRequestedBusinessId !== undefined &&
-      parsedRequestedBusinessId !== businessId
-    ) {
-      throw new ForbiddenException('Cannot access another business');
-    }
-
-    return {
-      businessId,
-      accessScope,
-      branchIds: authorization.branchIds,
-    };
-  }
-
-  private resolveAccessScope(
-    permissions: Record<string, RolePermissionAccessScope>,
-    permissionKeys: readonly string[],
-  ): RolePermissionAccessScope | null {
-    for (const permissionKey of permissionKeys) {
-      const accessScope = permissions[permissionKey];
-
-      if (accessScope) {
-        return accessScope;
-      }
-    }
-
-    return null;
-  }
-
-  private getAllowedBranchIdsForUserManageAccess(
-    access: UserManageAccess,
-  ): number[] | undefined {
-    return access.accessScope === 'business' ? undefined : access.branchIds;
-  }
-
-  private assertBranchAllowedForUserManageAccess(
-    access: UserManageAccess,
-    branchId: number,
-  ): void {
-    if (access.accessScope === 'business') {
-      return;
-    }
-
-    if (!access.branchIds.includes(branchId)) {
-      throw new ForbiddenException('Branch is not assigned to user');
-    }
   }
 
   private mapNullableUserResponse(user: User | null): UserResponse | null {

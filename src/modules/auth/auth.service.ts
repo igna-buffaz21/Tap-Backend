@@ -66,15 +66,6 @@ export class AuthService {
     }
 
     const authorization = await this.buildAuthorizationContext(user);
-    // Permisos temporales limitados al negocio del usuario real seleccionado.
-    authorization.permissions = {
-      'customer.manage': 'business',
-      'stock.manage': 'business',
-      'branch.manage': 'business',
-      'user.read': 'business',
-      'user.manage': 'business',
-      'business.settings': 'business',
-    };
     user.authorization = authorization;
     return {
       clerkId: user.clerk_id ?? '',
@@ -104,7 +95,6 @@ export class AuthService {
         'user.branch_id',
       ),
       roles: resolvedAuthorization.roles,
-      permissions: resolvedAuthorization.permissions,
     };
   }
 
@@ -144,14 +134,11 @@ export class AuthService {
       userId,
       businessId,
     );
-    // El nuevo esquema no define permisos por rol. Denegar hasta configurar esa política.
     return {
       userId,
       businessId,
       branchIds,
       roles: [],
-      permissions: {},
-      isSuperadmin: false,
     };
   }
 

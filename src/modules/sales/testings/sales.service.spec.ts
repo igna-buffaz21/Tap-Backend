@@ -17,8 +17,6 @@ describe('SalesService pagination', () => {
         businessId: 1,
         branchIds: [2],
         roles: [],
-        permissions: { 'stock.manage': 'business' },
-        isSuperadmin: false,
       },
     }) as User;
 
@@ -86,17 +84,15 @@ describe('SalesService pagination', () => {
     },
   );
 
-  it('preserves branch and own-sale restrictions in paginated requests', async () => {
+  it('allows business-wide requests without individual grants', async () => {
     const currentUser = user();
-    currentUser.authorization!.permissions['stock.manage'] = 'own';
 
     await service.findAllForBusiness(currentUser, undefined, '2', '5');
 
-    expect(repository.findAllForBusiness).toHaveBeenCalledWith(
-      1,
-      { allowedBranchIds: [2], createdByUserId: 7 },
-      { limit: 5, offset: 5 },
-    );
+    expect(repository.findAllForBusiness).toHaveBeenCalledWith(1, undefined, {
+      limit: 5,
+      offset: 5,
+    });
   });
 
   it('rejects a request for another business before querying', async () => {
@@ -106,15 +102,11 @@ describe('SalesService pagination', () => {
     expect(repository.findAllForBusiness).not.toHaveBeenCalled();
   });
 
-  it('uses the requested business for a superadmin', async () => {
-    const currentUser = user();
-    currentUser.authorization!.isSuperadmin = true;
-
-    await service.findAllForBusiness(currentUser, '3', '2', '5');
-
-    expect(repository.findAllForBusiness).toHaveBeenCalledWith(3, undefined, {
-      limit: 5,
-      offset: 5,
-    });
+  it('does not elevate a user based on their legacy role', async () => {
+    const currentUser = { ...user(), role: 'SUPERADMIN' };
+    await expect(
+      service.findAllForBusiness(currentUser, '3'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repository.findAllForBusiness).not.toHaveBeenCalled();
   });
 });

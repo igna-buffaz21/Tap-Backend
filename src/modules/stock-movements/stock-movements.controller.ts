@@ -14,7 +14,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequirePermission } from '../auth/decorators/require-permission.decorator';
 import { User } from '../users/entities/user.entity';
 import { CreateBulkStockMovementDto } from './dto/create-bulk-stock-movement.dto';
 import { CreateStockMovementDto } from './dto/create-stock-movement.dto';
@@ -22,7 +21,6 @@ import { StockMovementsService } from './stock-movements.service';
 
 @ApiTags('stock-movements')
 @ApiBearerAuth()
-@RequirePermission('stock.manage')
 @Controller('stock-movements')
 export class StockMovementsController {
   constructor(private readonly stockMovementsService: StockMovementsService) {}
