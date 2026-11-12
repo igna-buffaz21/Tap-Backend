@@ -16,12 +16,17 @@ describe('RFID automated flow console', () => {
     connect: jest.fn(),
   };
   const door = { open: jest.fn(), close: jest.fn() };
-  const reader = {
-    events: new EventEmitter(),
-    stopAllOperations: jest.fn(),
-    selectAntenna: jest.fn(),
-    inventory: jest.fn(),
-  };
+  const reader = Object.assign(
+    new Cm2000Service(
+      serial as unknown as SerialService,
+      door as unknown as DoorService,
+    ),
+    {
+      stopAllOperations: jest.fn(),
+      selectAntenna: jest.fn(),
+      inventory: jest.fn(),
+    },
+  );
 
   function run(answers: string[]) {
     const terminal = Object.assign(new EventEmitter(), {

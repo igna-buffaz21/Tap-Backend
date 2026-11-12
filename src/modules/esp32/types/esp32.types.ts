@@ -36,3 +36,20 @@ export interface SingleTagReadResult {
   found: boolean;
   tag: TagReading | null;
 }
+
+export interface RfidFlowResult {
+  epcs: string[];
+  total: number;
+  door: 'open';
+}
+
+export interface RfidProductFlowResult {
+  products: Array<{ epc: string; product: Product | null }>;
+  total: number;
+  door: RfidFlowResult['door'];
+}
+
+export type RfidFlowProgress =
+  | { stage: 'opening' | 'holding' | 'closing' | 'reading' }
+  | { stage: 'reopening'; epcs: string[] };
+import type { Product } from '../../products/entities/product.entity';

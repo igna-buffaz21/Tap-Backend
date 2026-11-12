@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter } from 'node:events';
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { Esp32Module } from '../esp32.module';
+import { DatabaseModule } from '../../../database/database.module';
+import { DatabaseService } from '../../../database/database.service';
 import { Esp32Controller } from '../esp32.controller';
 import { Cm2000Service } from '../services/cm2000.service';
 import { DoorService } from '../services/door.service';
@@ -21,7 +23,11 @@ describe('ESP32 controller with the shared reader service', () => {
 
   beforeEach(async () => {
     jest.resetAllMocks();
-    module = await Test.createTestingModule({ imports: [Esp32Module] })
+    module = await Test.createTestingModule({
+      imports: [DatabaseModule, Esp32Module.forApi()],
+    })
+      .overrideProvider(DatabaseService)
+      .useValue({ query: jest.fn() })
       .overrideProvider(SerialService)
       .useValue(serial)
       .overrideProvider(DoorService)

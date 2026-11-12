@@ -2,12 +2,11 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { createInterface, Interface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { setTimeout as delay } from 'node:timers/promises';
 import { Esp32Module } from '../../modules/esp32/esp32.module';
 import { Cm2000Service } from '../../modules/esp32/services/cm2000.service';
 import { DoorService } from '../../modules/esp32/services/door.service';
 import { SerialService } from '../../modules/esp32/services/serial.service';
-import type { TagReading } from '../../modules/esp32/types/esp32.types';
+import type { RfidFlowProgress } from '../../modules/esp32/types/esp32.types';
 
 export async function runRfidFlowConsole(
   terminal: Interface,
@@ -20,83 +19,41 @@ export async function runRfidFlowConsole(
   terminal.once('close', cancel);
   terminal.once('SIGINT', cancel);
 
-  async function connectEsp32(): Promise<void> {
-    if (serial.isConnected) return;
-    const ports = await serial.listPorts();
-    const candidates = ports.filter(
-      (port) =>
-        port.vendorId || /^(\/dev\/(ttyUSB|ttyACM)|COM\d+$)/i.test(port.path),
-    );
-    if (candidates.length !== 1)
-      throw new Error(
-        'Se necesita un único puerto USB serial disponible para conectar el ESP32.',
-      );
-    cancellation.signal.throwIfAborted();
-    console.log('Conectando a', candidates[0].path);
-    await serial.connect(candidates[0].path);
-  }
-
   async function executeFlow(): Promise<void> {
-    const flow = new AbortController();
-    const abort = () => flow.abort(cancellation.signal.reason);
-    const transportFailed = () =>
-      flow.abort(new Error('Se perdió la comunicación con el ESP32.'));
-    const epcs = new Set<string>();
-    let readingUntil = 0;
-    const onTag = (tag: TagReading) => {
-      if (!flow.signal.aborted && performance.now() < readingUntil)
-        epcs.add(tag.epc);
-    };
-    cancellation.signal.addEventListener('abort', abort, { once: true });
-    serial.events.on('disconnected', transportFailed);
-    serial.events.on('transportError', transportFailed);
-    reader.events.on('tag', onTag);
-    try {
-      cancellation.signal.throwIfAborted();
-      await connectEsp32();
-      await reader.stopAllOperations();
-      flow.signal.throwIfAborted();
-      console.log('Abriendo puerta…');
-      await door.open();
-      flow.signal.throwIfAborted();
-      console.log('Puerta abierta confirmada. Esperando 10 segundos…');
-      await delay(10_000, undefined, { signal: flow.signal });
-      flow.signal.throwIfAborted();
-      await door.close();
-      flow.signal.throwIfAborted();
-      console.log('Puerta cerrada confirmada. Iniciando lectura RFID en ANT4…');
-      await reader.selectAntenna(4);
-      flow.signal.throwIfAborted();
-      readingUntil = performance.now() + 5000;
-      while (performance.now() < readingUntil) {
-        flow.signal.throwIfAborted();
-        // Completar cada ronda evita dejar respuestas pendientes antes de abrir.
-        await reader.inventory();
-        flow.signal.throwIfAborted();
-        const remaining = readingUntil - performance.now();
-        if (remaining > 0)
-          await delay(Math.min(150, remaining), undefined, {
-            signal: flow.signal,
-          });
+    const onProgress = (progress: RfidFlowProgress) => {
+      switch (progress.stage) {
+        case 'opening':
+          console.log('Abriendo puerta…');
+          break;
+        case 'holding':
+          console.log('Puerta abierta confirmada. Esperando 10 segundos…');
+          break;
+        case 'closing':
+          console.log('Cerrando puerta…');
+          break;
+        case 'reading':
+          console.log(
+            'Puerta cerrada confirmada. Iniciando lectura RFID en ANT4…',
+          );
+          break;
+        case 'reopening':
+          console.log('\n===== INFORME DE LECTURA RFID =====\n');
+          console.log('Duración de lectura: 5 segundos');
+          console.log(`Total de EPC únicos: ${progress.epcs.length}\n`);
+          console.log('EPC detectados:');
+          progress.epcs.forEach((epc, index) =>
+            console.log(`${index + 1}. ${epc}`),
+          );
+          console.log('\nAbriendo puerta…');
+          break;
       }
-      readingUntil = 0;
-      flow.signal.throwIfAborted();
-      console.log('\n===== INFORME DE LECTURA RFID =====\n');
-      console.log('Duración de lectura: 5 segundos');
-      console.log(`Total de EPC únicos: ${epcs.size}\n`);
-      console.log('EPC detectados:');
-      [...epcs].forEach((epc, index) => console.log(`${index + 1}. ${epc}`));
-      console.log('\nAbriendo puerta…');
-      await door.open();
-      flow.signal.throwIfAborted();
+    };
+    reader.events.on('flowProgress', onProgress);
+    try {
+      await reader.runFlow(cancellation.signal);
       console.log('\n===== FLUJO FINALIZADO =====\n\nPuerta: ABIERTA');
     } finally {
-      readingUntil = 0;
-      reader.events.off('tag', onTag);
-      serial.events.off('disconnected', transportFailed);
-      serial.events.off('transportError', transportFailed);
-      cancellation.signal.removeEventListener('abort', abort);
-      await reader.stopAllOperations();
+      reader.events.off('flowProgress', onProgress);
     }
   }
 
@@ -115,7 +72,8 @@ export async function runRfidFlowConsole(
         cancellation.signal.throwIfAborted();
         if (option === '0') {
           await reader.stopAllOperations();
-          await connectEsp32();
+          if (!serial.isConnected)
+            await reader.ensureConnected(undefined, cancellation.signal);
           cancellation.signal.throwIfAborted();
           console.log('Cerrando puerta antes de salir…');
           await door.close();

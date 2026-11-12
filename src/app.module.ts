@@ -12,6 +12,7 @@ import { BusinessesModule } from './modules/businesses/businesses.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ProductCategoriesModule } from './modules/product-categories/product-categories.module';
+import { ProductIdentificationsModule } from './modules/product-identifications/product-identifications.module';
 import { ProductStocksModule } from './modules/product-stocks/product-stocks.module';
 import { ProductsModule } from './modules/products/products.module';
 import { StockMovementsModule } from './modules/stock-movements/stock-movements.module';
@@ -41,11 +42,12 @@ import { Esp32Module } from './modules/esp32/esp32.module';
     CustomersModule,
     ProductCategoriesModule,
     ProductsModule,
+    ProductIdentificationsModule,
     ProductStocksModule,
     StockMovementsModule,
     SalesModule,
     PaymentsModule,
-    Esp32Module,
+    Esp32Module.forApi(),
   ],
   controllers: [AppController],
   providers: [

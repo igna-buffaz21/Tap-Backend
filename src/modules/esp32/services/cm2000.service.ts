@@ -11,6 +11,8 @@ import type {
   AntennaPowers,
   EpcWriteOptions,
   InventoryOptions,
+  RfidFlowResult,
+  RfidFlowProgress,
   SingleTagReadResult,
   TagReading,
   TagRecord,
@@ -47,6 +49,7 @@ export class Cm2000Service implements OnModuleDestroy {
   private temperatureGeneration = 0;
   private destroyed = false;
   private singleReadActive = false;
+  private flowCancellation: AbortController | null = null;
   private connectionGeneration = 0;
 
   private readonly onData = (data: Buffer) => this.decode(data);
@@ -77,6 +80,7 @@ export class Cm2000Service implements OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     this.destroyed = true;
+    this.flowCancellation?.abort(new Error('El servicio está detenido.'));
     this.stopTemperatureMonitoring();
     this.onDisconnected();
     await this.stopInventory();
@@ -93,6 +97,7 @@ export class Cm2000Service implements OnModuleDestroy {
   ): Promise<SingleTagReadResult> {
     if (
       this.singleReadActive ||
+      this.flowCancellation !== null ||
       this.isInventoryRunning ||
       this.pendingOperations > 0
     ) {
@@ -101,23 +106,7 @@ export class Cm2000Service implements OnModuleDestroy {
     this.singleReadActive = true;
     try {
       signal?.throwIfAborted();
-      if (!this.serial.isConnected) {
-        if (portPath === undefined) {
-          const candidates = (await this.serial.listPorts()).filter(
-            (port) =>
-              port.vendorId ||
-              /^(\/dev\/(ttyUSB|ttyACM)|COM\d+$)/i.test(port.path),
-          );
-          if (candidates.length !== 1) {
-            throw new Error(
-              'Se necesita un único puerto USB serial disponible para conectar el ESP32.',
-            );
-          }
-          portPath = candidates[0].path;
-        }
-        signal?.throwIfAborted();
-        await this.serial.connect(portPath);
-      }
+      await this.ensureConnected(portPath, signal);
 
       await this.stopAllOperations();
       signal?.throwIfAborted();
@@ -178,6 +167,110 @@ export class Cm2000Service implements OnModuleDestroy {
         await this.stopAllOperations();
       } finally {
         this.singleReadActive = false;
+      }
+    }
+  }
+
+  async ensureConnected(
+    portPath?: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    signal?.throwIfAborted();
+    if (this.destroyed) throw new Error('El servicio está detenido.');
+    if (this.serial.isConnected) return;
+    if (portPath === undefined) {
+      const candidates = (await this.serial.listPorts()).filter(
+        (port) =>
+          port.vendorId || /^(\/dev\/(ttyUSB|ttyACM)|COM\d+$)/i.test(port.path),
+      );
+      if (candidates.length !== 1) {
+        throw new Error(
+          'Se necesita un único puerto USB serial disponible para conectar el ESP32.',
+        );
+      }
+      portPath = candidates[0].path;
+    }
+    signal?.throwIfAborted();
+    await this.serial.connect(portPath);
+  }
+
+  async runFlow(signal?: AbortSignal): Promise<RfidFlowResult> {
+    if (
+      this.singleReadActive ||
+      this.flowCancellation ||
+      this.isInventoryRunning ||
+      this.pendingOperations > 0
+    ) {
+      throw new ConflictException('El lector RFID está ocupado.');
+    }
+    const flow = new AbortController();
+    this.flowCancellation = flow;
+    const abort = () => flow.abort(signal?.reason);
+    const transportFailed = () =>
+      flow.abort(new Error('Se perdió la comunicación con el ESP32.'));
+    const epcs = new Set<string>();
+    let readingUntil = 0;
+    const onTag = (tag: TagReading) => {
+      if (!flow.signal.aborted && performance.now() < readingUntil)
+        epcs.add(tag.epc);
+    };
+    const progress = (state: RfidFlowProgress) =>
+      this.events.emit('flowProgress', state);
+    signal?.addEventListener('abort', abort, { once: true });
+    this.serial.events.on('disconnected', transportFailed);
+    this.serial.events.on('transportError', transportFailed);
+    this.events.on('tag', onTag);
+    try {
+      signal?.throwIfAborted();
+      await this.ensureConnected(undefined, flow.signal);
+      await this.stopAllOperations();
+      flow.signal.throwIfAborted();
+      progress({ stage: 'opening' });
+      await this.door.open();
+      flow.signal.throwIfAborted();
+      progress({ stage: 'holding' });
+      await delay(10_000, undefined, { signal: flow.signal });
+      flow.signal.throwIfAborted();
+      progress({ stage: 'closing' });
+      await this.door.close();
+      flow.signal.throwIfAborted();
+      progress({ stage: 'reading' });
+      await this.selectAntenna(4);
+      flow.signal.throwIfAborted();
+      readingUntil = performance.now() + 5000;
+      while (performance.now() < readingUntil) {
+        flow.signal.throwIfAborted();
+        // Finish the round before reopening, even if the reading window ends.
+        await this.inventory();
+        flow.signal.throwIfAborted();
+        const remaining = readingUntil - performance.now();
+        if (remaining > 0)
+          await delay(Math.min(150, remaining), undefined, {
+            signal: flow.signal,
+          });
+      }
+      readingUntil = 0;
+      flow.signal.throwIfAborted();
+      progress({ stage: 'reopening', epcs: [...epcs] });
+      await this.door.open();
+      flow.signal.throwIfAborted();
+      return { epcs: [...epcs], total: epcs.size, door: 'open' };
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        error instanceof Error
+          ? error.message
+          : 'No se pudo completar el flujo RFID.',
+      );
+    } finally {
+      readingUntil = 0;
+      this.events.off('tag', onTag);
+      this.serial.events.off('disconnected', transportFailed);
+      this.serial.events.off('transportError', transportFailed);
+      signal?.removeEventListener('abort', abort);
+      try {
+        await this.stopAllOperations();
+      } finally {
+        this.flowCancellation = null;
       }
     }
   }
