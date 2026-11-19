@@ -18,15 +18,30 @@ export async function runRfidFlowConsole(
   const cancel = () => cancellation.abort();
   terminal.once('close', cancel);
   terminal.once('SIGINT', cancel);
+  let exitRequested = false;
+  const onLine = (line: string) => {
+    if (line.trim() === '0') {
+      exitRequested = true;
+      cancel();
+    }
+  };
+  const onTransportFailure = () =>
+    cancellation.abort(new Error('Se perdió la comunicación con el ESP32.'));
+  terminal.on('line', onLine);
+  serial.events.on('disconnected', onTransportFailure);
+  serial.events.on('transportError', onTransportFailure);
 
-  async function executeFlow(): Promise<void> {
+  async function executeFlow(requireClear: boolean): Promise<void> {
     const onProgress = (progress: RfidFlowProgress) => {
       switch (progress.stage) {
         case 'opening':
           console.log('Abriendo puerta…');
           break;
+        case 'waitingForObject':
+          console.log('Esperando un objeto estable durante 1 segundo…');
+          break;
         case 'holding':
-          console.log('Puerta abierta confirmada. Esperando 10 segundos…');
+          console.log('Puerta abierta confirmada. Esperando 3 segundos…');
           break;
         case 'closing':
           console.log('Cerrando puerta…');
@@ -50,7 +65,7 @@ export async function runRfidFlowConsole(
     };
     reader.events.on('flowProgress', onProgress);
     try {
-      await reader.runFlow(cancellation.signal);
+      await reader.runFlow(cancellation.signal, { requireClear });
       console.log('\n===== FLUJO FINALIZADO =====\n\nPuerta: ABIERTA');
     } finally {
       reader.events.off('flowProgress', onProgress);
@@ -58,49 +73,35 @@ export async function runRfidFlowConsole(
   }
 
   try {
+    console.log(
+      'Modo automático. Escribí 0 para cerrar y salir; Ctrl+C para detener.',
+    );
+    let requireClear = false;
     while (!cancellation.signal.aborted) {
-      console.log(
-        '\n===== EJECUCIÓN RFID =====\n\n1 - Iniciar flujo\n0 - Salir\n',
-      );
-      let option = '';
-      try {
-        option = (
-          await terminal.question('Seleccione una opción: ', {
-            signal: cancellation.signal,
-          })
-        ).trim();
-        cancellation.signal.throwIfAborted();
-        if (option === '0') {
-          await reader.stopAllOperations();
-          if (!serial.isConnected)
-            await reader.ensureConnected(undefined, cancellation.signal);
-          cancellation.signal.throwIfAborted();
-          console.log('Cerrando puerta antes de salir…');
-          await door.close();
-          console.log('Puerta cerrada confirmada. Saliendo.');
-          return;
-        }
-        // Esperar todo el flujo antes de pedir otra opción impide superponer ejecuciones.
-        if (option === '1') await executeFlow();
-        else console.log('Opción inválida.');
-      } catch (error) {
-        console.error(
-          option === '0'
-            ? 'No se pudo confirmar el cierre; no se salió:'
-            : 'Flujo detenido:',
-          error instanceof Error ? error.message : 'Error desconocido.',
-        );
-        if (option !== '0')
-          console.error(
-            'El flujo no se completó. No se garantiza que la puerta esté abierta.',
-          );
-        if (cancellation.signal.aborted) return;
-      }
+      await executeFlow(requireClear);
+      requireClear = true;
+    }
+  } catch (error) {
+    if (
+      !cancellation.signal.aborted ||
+      (cancellation.signal.reason instanceof Error &&
+        cancellation.signal.reason.name !== 'AbortError')
+    ) {
+      throw error;
     }
   } finally {
+    cancel();
     terminal.off('close', cancel);
     terminal.off('SIGINT', cancel);
+    terminal.off('line', onLine);
+    serial.events.off('disconnected', onTransportFailure);
+    serial.events.off('transportError', onTransportFailure);
     await reader.stopAllOperations();
+    if (exitRequested) {
+      console.log('Cerrando puerta antes de salir…');
+      await door.close();
+      console.log('Puerta cerrada confirmada. Saliendo.');
+    }
   }
 }
 

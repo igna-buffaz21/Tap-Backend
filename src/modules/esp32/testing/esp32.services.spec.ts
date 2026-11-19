@@ -3,6 +3,7 @@ import { SerialPort } from 'serialport';
 import { Cm2000Service } from '../services/cm2000.service';
 import { DoorService } from '../services/door.service';
 import { SerialService } from '../services/serial.service';
+import { SensorService } from '../services/sensor.service';
 
 jest.mock('serialport', () => ({
   SerialPort: Object.assign(jest.fn(), { list: jest.fn() }),
@@ -162,7 +163,7 @@ describe('ESP32 services over the shared USB connection', () => {
     jest.mocked(SerialPort).mockImplementation(() => port);
     serial = new SerialService();
     door = new DoorService(serial);
-    reader = new Cm2000Service(serial, door);
+    reader = new Cm2000Service(serial, door, new SensorService(serial));
     const connected = serial.connect('/dev/test-esp32');
     await jest.advanceTimersByTimeAsync(2500);
     await connected;

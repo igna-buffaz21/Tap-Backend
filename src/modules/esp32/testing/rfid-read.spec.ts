@@ -3,6 +3,7 @@ import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { Cm2000Service } from '../services/cm2000.service';
 import { DoorService } from '../services/door.service';
 import { SerialService } from '../services/serial.service';
+import { SensorService } from '../services/sensor.service';
 
 describe('Single RFID read', () => {
   const serial = {
@@ -16,6 +17,7 @@ describe('Single RFID read', () => {
     new Cm2000Service(
       serial as unknown as SerialService,
       door as unknown as DoorService,
+      new SensorService(serial as unknown as SerialService),
     ),
     { stopAllOperations: jest.fn(), startInventory: jest.fn() },
   );

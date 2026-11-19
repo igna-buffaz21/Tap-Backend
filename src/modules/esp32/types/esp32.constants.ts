@@ -6,6 +6,7 @@ export const ESP32 = {
   closeDoor: 0x01, //comando para cerrar puerta
   rfidTx: 0x10,
   rfidRx: 0x11,
+  sensor: 0x12,
   ack: 0x20, //comando de confirmación del esp32 que se recibió la orden de abrir/cerrar puerta
   startupMs: 2500,
   timeoutMs: 2500,

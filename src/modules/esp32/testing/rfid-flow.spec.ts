@@ -8,6 +8,7 @@ import { User } from '../../users/entities/user.entity';
 import { Cm2000Service } from '../services/cm2000.service';
 import { DoorService } from '../services/door.service';
 import { SerialService } from '../services/serial.service';
+import { SensorService } from '../services/sensor.service';
 
 jest.mock('node:timers/promises', () => ({ setTimeout: jest.fn() }));
 
@@ -18,11 +19,13 @@ describe('RFID flow endpoint', () => {
     listPorts: jest.fn(),
     connect: jest.fn(),
   };
+  const sensor = new SensorService(serial as unknown as SerialService);
   const door = { open: jest.fn(), close: jest.fn(), state: 'open' };
   const reader = Object.assign(
     new Cm2000Service(
       serial as unknown as SerialService,
       door as unknown as DoorService,
+      sensor,
     ),
     {
       stopAllOperations: jest.fn(),
@@ -40,12 +43,24 @@ describe('RFID flow endpoint', () => {
   const product = { id: '12', business_id: '7', name: 'Café' };
   const tag = { epc: 'CAFE00000001000000000002', antenna: 4, rssiRaw: 100 };
 
-  beforeEach(() => {
+  function detect(state: boolean) {
+    const onFrame = Reflect.get(sensor, 'onFrame') as (
+      type: number,
+      data: Buffer,
+    ) => void;
+    onFrame.call(sensor, 0x12, Buffer.from([state ? 1 : 0]));
+  }
+
+  beforeEach(async () => {
     jest.useFakeTimers();
     jest.resetAllMocks();
     serial.events.removeAllListeners();
     reader.events.removeAllListeners();
     serial.isConnected = true;
+    Reflect.set(sensor, 'detected', null);
+    Reflect.set(sensor, 'consumed', false);
+    detect(true);
+    sensor.events.removeAllListeners();
     repository.findProductsByRfidValuesForBusiness.mockResolvedValue([
       { ...product, identification_value: '00000001' },
     ]);
@@ -77,6 +92,7 @@ describe('RFID flow endpoint', () => {
           if (signal?.aborted) abort();
         }) as ReturnType<typeof delay>,
     );
+    await jest.advanceTimersByTimeAsync(1000);
   });
 
   afterEach(() => jest.useRealTimers());
@@ -94,7 +110,7 @@ describe('RFID flow endpoint', () => {
     void finished.then(() => {
       completed = true;
     });
-    await jest.advanceTimersByTimeAsync(9999);
+    await jest.advanceTimersByTimeAsync(2999);
     expect(door.close).not.toHaveBeenCalled();
     expect(reader.inventory).not.toHaveBeenCalled();
     await jest.advanceTimersByTimeAsync(1);
@@ -118,6 +134,84 @@ describe('RFID flow endpoint', () => {
     expect(jest.getTimerCount()).toBe(0);
   });
 
+  it('reports detection readiness and rejects a flow until the full stable second', async () => {
+    detect(false);
+    await expect(controller.getSensorStatus()).resolves.toEqual({
+      detected: false,
+      confirmed: false,
+      ready: false,
+      busy: false,
+    });
+    await expect(controller.runFlow(user)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    detect(true);
+    await jest.advanceTimersByTimeAsync(900);
+    detect(false);
+    detect(true);
+    await jest.advanceTimersByTimeAsync(999);
+    await expect(controller.getSensorStatus()).resolves.toEqual({
+      detected: true,
+      confirmed: false,
+      ready: false,
+      busy: false,
+    });
+    await expect(controller.runFlow(user)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(door.open).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1);
+    await expect(controller.getSensorStatus()).resolves.toEqual({
+      detected: true,
+      confirmed: true,
+      ready: true,
+      busy: false,
+    });
+    const finished = controller.runFlow(user);
+    await expect(controller.getSensorStatus()).resolves.toEqual({
+      detected: true,
+      confirmed: true,
+      ready: false,
+      busy: true,
+    });
+    await jest.advanceTimersByTimeAsync(8000);
+    await finished;
+    await expect(controller.getSensorStatus()).resolves.toEqual({
+      detected: true,
+      confirmed: true,
+      ready: false,
+      busy: false,
+    });
+    await expect(controller.runFlow(user)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    detect(false);
+    detect(true);
+    await jest.advanceTimersByTimeAsync(1000);
+    await expect(controller.getSensorStatus()).resolves.toEqual({
+      detected: true,
+      confirmed: true,
+      ready: true,
+      busy: false,
+    });
+  });
+
+  it('returns 503 if sensor polling cannot connect', async () => {
+    serial.isConnected = false;
+    serial.listPorts.mockResolvedValue([]);
+    await expect(controller.getSensorStatus()).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(door.open).not.toHaveBeenCalled();
+  });
+
+  it('does not operate the hardware for a user without a business', async () => {
+    await expect(
+      controller.runFlow({ authorization: {} } as User),
+    ).rejects.toThrow();
+    expect(door.open).not.toHaveBeenCalled();
+  });
+
   it('waits for the closing ACK before selecting an antenna or reading', async () => {
     let confirmClosing!: () => void;
     door.close.mockImplementationOnce(
@@ -127,7 +221,7 @@ describe('RFID flow endpoint', () => {
         }),
     );
     const finished = controller.runFlow(user);
-    await jest.advanceTimersByTimeAsync(15_000);
+    await jest.advanceTimersByTimeAsync(9000);
     expect(reader.selectAntenna).not.toHaveBeenCalled();
     expect(reader.inventory).not.toHaveBeenCalled();
     confirmClosing();
@@ -146,7 +240,7 @@ describe('RFID flow endpoint', () => {
     );
     expect(reader.stopAllOperations).toHaveBeenCalledTimes(1);
     expect(door.open).toHaveBeenCalledTimes(1);
-    await jest.advanceTimersByTimeAsync(14_000);
+    await jest.advanceTimersByTimeAsync(8000);
     await finished;
   });
 
@@ -166,8 +260,11 @@ describe('RFID flow endpoint', () => {
     await expect(controller.runFlow(user)).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
+    detect(false);
+    detect(true);
+    await jest.advanceTimersByTimeAsync(1000);
     const finished = controller.runFlow(user);
-    await jest.advanceTimersByTimeAsync(15_000);
+    await jest.advanceTimersByTimeAsync(9000);
     await expect(finished).resolves.toEqual({
       products: [{ epc: tag.epc, product }],
       total: 1,
@@ -211,7 +308,7 @@ describe('RFID flow endpoint', () => {
       const assertion = expect(controller.runFlow(user)).rejects.toBeInstanceOf(
         ServiceUnavailableException,
       );
-      await jest.advanceTimersByTimeAsync(15_000);
+      await jest.advanceTimersByTimeAsync(9000);
       await assertion;
       expect(reader.events.listenerCount('tag')).toBe(0);
       if (stage !== 'final opening') expect(door.open).toHaveBeenCalledTimes(1);

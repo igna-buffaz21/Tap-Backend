@@ -8,6 +8,8 @@ import { Esp32Controller } from '../esp32.controller';
 import { Cm2000Service } from '../services/cm2000.service';
 import { DoorService } from '../services/door.service';
 import { SerialService } from '../services/serial.service';
+import { SensorService } from '../services/sensor.service';
+import type { MessageEvent } from '@nestjs/common';
 
 describe('ESP32 controller with the shared reader service', () => {
   let module: TestingModule;
@@ -23,6 +25,7 @@ describe('ESP32 controller with the shared reader service', () => {
 
   beforeEach(async () => {
     jest.resetAllMocks();
+    serial.isConnected = true;
     module = await Test.createTestingModule({
       imports: [DatabaseModule, Esp32Module.forApi()],
     })
@@ -82,5 +85,146 @@ describe('ESP32 controller with the shared reader service', () => {
     await expect(controller.readTag()).rejects.toBeInstanceOf(
       ServiceUnavailableException,
     );
+  });
+
+  it('streams the current state, confirms after 1 second and sends a fresh snapshot on reconnect', async () => {
+    const events: MessageEvent[] = [];
+    const subscription = controller
+      .sensorEvents()
+      .subscribe((event) => events.push(event));
+    await jest.advanceTimersByTimeAsync(0);
+    expect(events[0]).toEqual({
+      type: 'sensor',
+      data: { detected: null, confirmed: false, ready: false, busy: false },
+    });
+    serial.events.emit('frame', 0x12, Buffer.from([1]));
+    expect(events.at(-1)).toEqual({
+      type: 'sensor',
+      data: { detected: true, confirmed: false, ready: false, busy: false },
+    });
+    await jest.advanceTimersByTimeAsync(999);
+    expect((events.at(-1)!.data as { ready: boolean }).ready).toBe(false);
+    await jest.advanceTimersByTimeAsync(1);
+    const ready = {
+      type: 'sensor',
+      data: { detected: true, confirmed: true, ready: true, busy: false },
+    };
+    expect(events.at(-1)).toEqual(ready);
+    subscription.unsubscribe();
+    const reconnected: MessageEvent[] = [];
+    const next = controller
+      .sensorEvents()
+      .subscribe((event) => reconnected.push(event));
+    expect(reconnected[0]).toEqual(ready);
+    module.get(SensorService).consumeDetection();
+    expect(reconnected.at(-1)).toEqual({
+      type: 'sensor',
+      data: { detected: true, confirmed: true, ready: false, busy: false },
+    });
+    next.unsubscribe();
+  });
+
+  it('does not announce readiness for brief detection and removes each subscriber independently', async () => {
+    const sensor = module.get(SensorService);
+    const baseline = serial.events.listenerCount('disconnected');
+    const first = jest.fn();
+    const second = jest.fn();
+    const one = controller.sensorEvents().subscribe(first);
+    const two = controller.sensorEvents().subscribe(second);
+    await jest.advanceTimersByTimeAsync(0);
+    serial.events.emit('frame', 0x12, Buffer.from([1]));
+    await jest.advanceTimersByTimeAsync(900);
+    serial.events.emit('frame', 0x12, Buffer.from([0]));
+    one.unsubscribe();
+    const calls = first.mock.calls.length;
+    await jest.advanceTimersByTimeAsync(100);
+    expect(second).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ ready: true }),
+      }),
+    );
+    serial.events.emit('frame', 0x12, Buffer.from([1]));
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(first).toHaveBeenCalledTimes(calls);
+    expect(second).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ ready: true }),
+      }),
+    );
+    two.unsubscribe();
+    expect(sensor.events.listenerCount('status')).toBe(0);
+    expect(reader.events.listenerCount('flowProgress')).toBe(0);
+    expect(serial.events.listenerCount('disconnected')).toBe(baseline);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('streams heartbeat and flow stages without exposing EPCs, and reports availability after a read', async () => {
+    const events: MessageEvent[] = [];
+    const subscription = controller
+      .sensorEvents()
+      .subscribe((event) => events.push(event));
+    await jest.advanceTimersByTimeAsync(0);
+    reader.events.emit('flowProgress', {
+      stage: 'reopening',
+      epcs: ['PRIVATE-EPC'],
+    });
+    expect(events.at(-1)).toEqual({
+      type: 'flow',
+      data: { stage: 'reopening' },
+    });
+    jest.spyOn(reader, 'startInventory').mockImplementation(() => undefined);
+    const reading = controller.readTag();
+    expect(events.at(-1)).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({ busy: true, ready: false }),
+      }),
+    );
+    await jest.advanceTimersByTimeAsync(5000);
+    await reading;
+    expect(events.at(-1)).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({ busy: false }),
+      }),
+    );
+    await jest.advanceTimersByTimeAsync(10_000);
+    expect(events.at(-1)).toEqual({ type: 'heartbeat', data: {} });
+    subscription.unsubscribe();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it.each(['disconnected', 'transportError'])(
+    'closes the stream and clears resources on %s',
+    async (event) => {
+      const messages: MessageEvent[] = [];
+      const complete = jest.fn();
+      const subscription = controller
+        .sensorEvents()
+        .subscribe({ next: (message) => messages.push(message), complete });
+      await jest.advanceTimersByTimeAsync(0);
+      serial.isConnected = false;
+      serial.events.emit(event);
+      expect(messages.at(-1)).toEqual(
+        expect.objectContaining({ type: 'hardwareError' }),
+      );
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(subscription.closed).toBe(true);
+      expect(module.get(SensorService).events.listenerCount('status')).toBe(0);
+      expect(jest.getTimerCount()).toBe(0);
+    },
+  );
+
+  it('reports connection failure inside the stream and completes', async () => {
+    serial.isConnected = false;
+    serial.listPorts.mockResolvedValue([]);
+    const messages: MessageEvent[] = [];
+    const subscription = controller
+      .sensorEvents()
+      .subscribe((message) => messages.push(message));
+    await jest.advanceTimersByTimeAsync(0);
+    expect(messages.at(-1)).toEqual(
+      expect.objectContaining({ type: 'hardwareError' }),
+    );
+    expect(subscription.closed).toBe(true);
+    expect(jest.getTimerCount()).toBe(0);
   });
 });

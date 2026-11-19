@@ -43,6 +43,24 @@ export interface RfidFlowResult {
   door: 'open';
 }
 
+export interface RfidFlowOptions {
+  requireClear?: boolean;
+  sensorTriggered?: boolean;
+}
+
+export interface SensorStatus {
+  detected: boolean | null;
+  confirmed: boolean;
+  ready: boolean;
+  busy: boolean;
+}
+
+export type SensorStreamEvent =
+  | { type: 'sensor'; data: SensorStatus }
+  | { type: 'flow'; data: { stage: RfidFlowProgress['stage'] } }
+  | { type: 'heartbeat'; data: Record<string, never> }
+  | { type: 'hardwareError'; data: { message: string } };
+
 export interface RfidProductFlowResult {
   products: Array<{ epc: string; product: Product | null }>;
   total: number;
@@ -50,6 +68,15 @@ export interface RfidProductFlowResult {
 }
 
 export type RfidFlowProgress =
-  | { stage: 'opening' | 'holding' | 'closing' | 'reading' }
+  | {
+      stage:
+        | 'opening'
+        | 'waitingForObject'
+        | 'holding'
+        | 'closing'
+        | 'reading'
+        | 'completed'
+        | 'failed';
+    }
   | { stage: 'reopening'; epcs: string[] };
 import type { Product } from '../../products/entities/product.entity';

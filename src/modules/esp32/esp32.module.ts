@@ -5,10 +5,11 @@ import { Esp32Controller } from './esp32.controller';
 import { Cm2000Service } from './services/cm2000.service';
 import { DoorService } from './services/door.service';
 import { SerialService } from './services/serial.service';
+import { SensorService } from './services/sensor.service';
 
 @Module({
-  providers: [Cm2000Service, DoorService, SerialService],
-  exports: [Cm2000Service, DoorService, SerialService],
+  providers: [Cm2000Service, DoorService, SerialService, SensorService],
+  exports: [Cm2000Service, DoorService, SerialService, SensorService],
 })
 export class Esp32Module {
   // Console scripts use the hardware module without HTTP or database dependencies.

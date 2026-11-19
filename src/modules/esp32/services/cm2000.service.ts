@@ -6,12 +6,16 @@ import {
 } from '@nestjs/common';
 import { EventEmitter } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
+import { Observable } from 'rxjs';
 import { CM2000, ESP32 } from '../types/esp32.constants';
 import type {
   AntennaPowers,
   EpcWriteOptions,
   InventoryOptions,
   RfidFlowResult,
+  RfidFlowOptions,
+  SensorStatus,
+  SensorStreamEvent,
   RfidFlowProgress,
   SingleTagReadResult,
   TagReading,
@@ -20,6 +24,7 @@ import type {
 } from '../types/esp32.types';
 import { SerialService } from './serial.service';
 import { DoorService } from './door.service';
+import { SensorService } from './sensor.service';
 
 @Injectable()
 export class Cm2000Service implements OnModuleDestroy {
@@ -71,6 +76,7 @@ export class Cm2000Service implements OnModuleDestroy {
   constructor(
     private readonly serial: SerialService,
     private readonly door: DoorService,
+    private readonly sensor: SensorService,
   ) {
     serial.events.on('rfid', this.onData);
     serial.events.on('connected', this.onConnected);
@@ -80,6 +86,7 @@ export class Cm2000Service implements OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     this.destroyed = true;
+    this.events.emit('destroyed');
     this.flowCancellation?.abort(new Error('El servicio está detenido.'));
     this.stopTemperatureMonitoring();
     this.onDisconnected();
@@ -104,6 +111,7 @@ export class Cm2000Service implements OnModuleDestroy {
       throw new ConflictException('El lector RFID está ocupado.');
     }
     this.singleReadActive = true;
+    this.events.emit('availability');
     try {
       signal?.throwIfAborted();
       await this.ensureConnected(portPath, signal);
@@ -167,6 +175,7 @@ export class Cm2000Service implements OnModuleDestroy {
         await this.stopAllOperations();
       } finally {
         this.singleReadActive = false;
+        this.events.emit('availability');
       }
     }
   }
@@ -194,7 +203,89 @@ export class Cm2000Service implements OnModuleDestroy {
     await this.serial.connect(portPath);
   }
 
-  async runFlow(signal?: AbortSignal): Promise<RfidFlowResult> {
+  async getSensorStatus(): Promise<SensorStatus> {
+    try {
+      await this.ensureConnected();
+    } catch {
+      throw new ServiceUnavailableException(
+        'No se pudo conectar con el ESP32.',
+      );
+    }
+    return this.sensorStatus;
+  }
+
+  private get sensorStatus(): SensorStatus {
+    const busy =
+      this.singleReadActive ||
+      this.flowCancellation !== null ||
+      this.isInventoryRunning ||
+      this.pendingOperations > 0;
+    return {
+      detected: this.sensor.state,
+      confirmed: this.sensor.confirmed,
+      ready: this.serial.isConnected && !busy && this.sensor.ready,
+      busy,
+    };
+  }
+
+  observeSensor(): Observable<SensorStreamEvent> {
+    return new Observable((subscriber) => {
+      let previousStatus = '';
+      const snapshot = () => {
+        const status = this.sensorStatus;
+        const serialized = JSON.stringify(status);
+        if (serialized === previousStatus) return;
+        previousStatus = serialized;
+        subscriber.next({ type: 'sensor', data: status });
+      };
+      const onFlow = (progress: RfidFlowProgress) =>
+        subscriber.next({ type: 'flow', data: { stage: progress.stage } });
+      const onFailure = () => {
+        subscriber.next({
+          type: 'hardwareError',
+          data: {
+            message: 'No hay comunicación con el ESP32. Reconectá el stream.',
+          },
+        });
+        subscriber.complete();
+      };
+      const complete = () => subscriber.complete();
+      this.sensor.events.on('status', snapshot);
+      this.events.on('availability', snapshot);
+      this.events.on('flowProgress', onFlow);
+      this.events.on('destroyed', complete);
+      this.serial.events.on('connected', snapshot);
+      this.serial.events.on('disconnected', onFailure);
+      this.serial.events.on('transportError', onFailure);
+      // Publicar el estado actual en cada conexión; no se depende de otro cambio físico.
+      snapshot();
+      void this.ensureConnected()
+        .then(() => {
+          if (!subscriber.closed) snapshot();
+        })
+        .catch(() => {
+          if (!subscriber.closed) onFailure();
+        });
+      const heartbeat = setInterval(() => {
+        subscriber.next({ type: 'heartbeat', data: {} });
+      }, 15_000);
+      return () => {
+        clearInterval(heartbeat);
+        this.sensor.events.off('status', snapshot);
+        this.events.off('availability', snapshot);
+        this.events.off('flowProgress', onFlow);
+        this.events.off('destroyed', complete);
+        this.serial.events.off('connected', snapshot);
+        this.serial.events.off('disconnected', onFailure);
+        this.serial.events.off('transportError', onFailure);
+      };
+    });
+  }
+
+  async runFlow(
+    signal?: AbortSignal,
+    options: RfidFlowOptions = {},
+  ): Promise<RfidFlowResult> {
     if (
       this.singleReadActive ||
       this.flowCancellation ||
@@ -203,8 +294,11 @@ export class Cm2000Service implements OnModuleDestroy {
     ) {
       throw new ConflictException('El lector RFID está ocupado.');
     }
+    signal?.throwIfAborted();
+    if (options.sensorTriggered) this.sensor.consumeDetection();
     const flow = new AbortController();
     this.flowCancellation = flow;
+    this.events.emit('availability');
     const abort = () => flow.abort(signal?.reason);
     const transportFailed = () =>
       flow.abort(new Error('Se perdió la comunicación con el ESP32.'));
@@ -225,11 +319,20 @@ export class Cm2000Service implements OnModuleDestroy {
       await this.ensureConnected(undefined, flow.signal);
       await this.stopAllOperations();
       flow.signal.throwIfAborted();
+      if (options.sensorTriggered && !this.sensor.confirmed)
+        throw new Error(
+          'El sensor dejó de detectar el objeto antes del inicio.',
+        );
       progress({ stage: 'opening' });
       await this.door.open();
       flow.signal.throwIfAborted();
+      if (!options.sensorTriggered) {
+        progress({ stage: 'waitingForObject' });
+        await this.sensor.waitForObject(flow.signal, options.requireClear);
+      }
+      flow.signal.throwIfAborted();
       progress({ stage: 'holding' });
-      await delay(10_000, undefined, { signal: flow.signal });
+      await delay(3000, undefined, { signal: flow.signal });
       flow.signal.throwIfAborted();
       progress({ stage: 'closing' });
       await this.door.close();
@@ -254,8 +357,10 @@ export class Cm2000Service implements OnModuleDestroy {
       progress({ stage: 'reopening', epcs: [...epcs] });
       await this.door.open();
       flow.signal.throwIfAborted();
+      progress({ stage: 'completed' });
       return { epcs: [...epcs], total: epcs.size, door: 'open' };
     } catch (error) {
+      progress({ stage: 'failed' });
       throw new ServiceUnavailableException(
         error instanceof Error
           ? error.message
@@ -271,6 +376,7 @@ export class Cm2000Service implements OnModuleDestroy {
         await this.stopAllOperations();
       } finally {
         this.flowCancellation = null;
+        this.events.emit('availability');
       }
     }
   }
@@ -321,7 +427,9 @@ export class Cm2000Service implements OnModuleDestroy {
       .finally(() => {
         this.inventoryTask = null;
         this.events.emit('stopped');
+        this.events.emit('availability');
       });
+    this.events.emit('availability');
   }
 
   async stopInventory(): Promise<void> {
@@ -686,6 +794,7 @@ export class Cm2000Service implements OnModuleDestroy {
 
   private exclusive<T>(operation: () => Promise<T>): Promise<T> {
     this.pendingOperations++;
+    this.events.emit('availability');
     const generation = this.connectionGeneration;
     const pending = this.operations.then(async () => {
       if (
@@ -704,6 +813,7 @@ export class Cm2000Service implements OnModuleDestroy {
       .catch(() => undefined)
       .finally(() => {
         this.pendingOperations--;
+        this.events.emit('availability');
       });
     return pending;
   }

@@ -186,11 +186,8 @@ void revisarSensor() {
     if (deteccion != objetoDetectado) {
       objetoDetectado = deteccion;
 
-      if (objetoDetectado) {
-        Serial.println("OBJETO DETECTADO");
-      } else {
-        Serial.println("SIN OBJETO");
-      }
+      uint8_t estado = objetoDetectado ? 1 : 0;
+      enviarTrama(CMD_SENSOR, &estado, 1);
     }
   }
 
