@@ -9,6 +9,7 @@ Servo servoPuerta;
 const int PIN_SERVO = 18;
 const int PIN_RX_RFID = 16;
 const int PIN_TX_RFID = 17;
+const int PIN_SENSOR = 34;
 
 // Posiciones
 const int ANGULO_ABIERTO = 0;
@@ -20,6 +21,7 @@ const uint8_t CMD_ABRIR = 0x01;
 const uint8_t CMD_CERRAR = 0x02;
 const uint8_t CMD_RFID_TX = 0x10;
 const uint8_t CMD_RFID_RX = 0x11;
+const uint8_t CMD_SENSOR = 0x12;  // NUEVO
 const uint8_t CMD_ACK = 0x20;
 
 const uint8_t MAX_DATOS = 64;
@@ -32,6 +34,11 @@ uint8_t checksumRX = 0;
 uint8_t estadoRX = 0;
 
 unsigned long ultimoByteRX = 0;
+
+// Estado del sensor
+int ultimoEstadoSensor = HIGH;
+unsigned long ultimoCambioSensor = 0;
+const unsigned long DEBOUNCE_SENSOR = 50;
 
 // Control del servo
 void abrirPuerta() {
@@ -80,7 +87,6 @@ void procesarComando() {
       break;
 
     case CMD_RFID_TX:
-      // Enviar datos al CM2000
       RFID.write(datosRX, longitudRX);
       break;
   }
@@ -93,19 +99,19 @@ void recibirPython() {
     ultimoByteRX = millis();
 
     switch (estadoRX) {
-      case 0: // Esperar inicio
+      case 0:
         if (dato == SOF) {
           estadoRX = 1;
         }
         break;
 
-      case 1: // Tipo
+      case 1:
         tipoRX = dato;
         checksumRX = dato;
         estadoRX = 2;
         break;
 
-      case 2: // Longitud
+      case 2:
         longitudRX = dato;
         checksumRX ^= dato;
         indiceRX = 0;
@@ -117,7 +123,7 @@ void recibirPython() {
         }
         break;
 
-      case 3: // Datos
+      case 3:
         datosRX[indiceRX++] = dato;
         checksumRX ^= dato;
 
@@ -126,7 +132,7 @@ void recibirPython() {
         }
         break;
 
-      case 4: // Checksum
+      case 4:
         if (dato == checksumRX) {
           procesarComando();
         }
@@ -139,7 +145,6 @@ void recibirPython() {
     }
   }
 
-  // Descartar tramas incompletas
   if (estadoRX != 0 &&
       millis() - ultimoByteRX > 500) {
     estadoRX = 0;
@@ -160,6 +165,38 @@ void recibirRFID() {
   }
 }
 
+void revisarSensor() {
+  static bool objetoDetectado = false;
+  static bool ultimaLectura = false;
+  static unsigned long ultimoCambio = 0;
+
+  // Leer sensor analógico
+  int valorADC = analogRead(PIN_SENSOR);
+
+  // Umbral entre 0V y 1.79V
+  bool deteccion = (valorADC < 1000);
+
+  // Detectar cambios
+  if (deteccion != ultimaLectura) {
+    ultimoCambio = millis();
+  }
+
+  // Confirmar estado estable durante 150 ms
+  if (millis() - ultimoCambio >= 150) {
+    if (deteccion != objetoDetectado) {
+      objetoDetectado = deteccion;
+
+      if (objetoDetectado) {
+        Serial.println("OBJETO DETECTADO");
+      } else {
+        Serial.println("SIN OBJETO");
+      }
+    }
+  }
+
+  ultimaLectura = deteccion;
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -173,6 +210,11 @@ void setup() {
   servoPuerta.setPeriodHertz(50);
   servoPuerta.attach(PIN_SERVO, 500, 2400);
 
+  // NUEVO: configurar sensor
+  pinMode(PIN_SENSOR, INPUT);
+
+  ultimoEstadoSensor = digitalRead(PIN_SENSOR);
+
   // Estado inicial
   cerrarPuerta();
 }
@@ -180,4 +222,5 @@ void setup() {
 void loop() {
   recibirPython();
   recibirRFID();
+  revisarSensor();  // NUEVO
 }
